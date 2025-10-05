@@ -24,7 +24,7 @@ private:
     bool requires_grad_;
     std::function<void(const std::vector<double>&)> grad_fn_;
     std::vector<VarPtr> children_;
-    std::vecotor<size_t> shape_;
+    std::vector<size_t> shape_;
 public:
     /**
      * 构造函数
@@ -67,8 +67,6 @@ public:
         }
         if(total != data_.size()){
             throw std::runtime_error("Data size does not match shape");
-        }
-
         }
     }
     // check if it is some simple shapes like scalar, vector and matrix
@@ -189,7 +187,7 @@ VarPtr make_var(double value, bool requires_grad = false) {
     return std::make_shared<Variable>(value, requires_grad);
 }
 
-VarPtr make_var(const std::vector<double>& data, bool requires_grad = false, const std::vector<int>& shape = {}) {
+VarPtr make_var(const std::vector<double>& data, bool requires_grad = false, const std::vector<size_t>& shape = {}) {
     return std::make_shared<Variable>(data, requires_grad, shape);
 }
 

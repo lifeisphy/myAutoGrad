@@ -1,5 +1,6 @@
 {
     "files.associations": {
+        "*.ejs": "ejs",
         "*.md": "markdown",
         "*.qasm": "qasm",
         "*.S": "asm-intel-x86-generic",
@@ -51,6 +52,8 @@
         "streambuf": "cpp",
         "typeinfo": "cpp",
         "ranges": "cpp",
-        "optional": "cpp"
+        "optional": "cpp",
+        "span": "cpp",
+        "variant": "cpp"
     }
 }

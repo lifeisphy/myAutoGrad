@@ -1,3 +1,5 @@
+Note: this demo is based on AI generated code with modification. Use with caution.
+
 # C++ 基础自动微分框架
 
 这是一个用C++实现的基础自动微分框架，支持标量和向量的自动微分计算。该框架实现了反向传播算法，可以自动计算复杂函数的梯度。

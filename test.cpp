@@ -7,12 +7,20 @@
 #include <iostream>
 #include <cassert>
 #include <cmath>
-
+using vec=std::vector<double>;
 // 数值梯度检查函数
 double numerical_gradient(std::function<double(double)> func, double x, double h = 1e-5) {
     return (func(x + h) - func(x - h)) / (2 * h);
 }
-
+void test_operations(){
+    auto a = make_var(vec{1.0,2.0,3.0,4.0}, true, {2,1,2});
+    auto b = make_var(vec{1,2},true,{2,1});
+    auto c = add(a,b);
+    c->backward();
+    c->print();
+    a->print();
+    b->print();
+}
 // 测试基础运算
 void test_basic_operations() {
     std::cout << "\n=== 测试基础运算 ===" << std::endl;
@@ -226,12 +234,13 @@ int main() {
     std::cout << "========================" << std::endl;
     
     try {
-        test_basic_operations();
-        test_composite_function();
-        test_activation_functions();
-        test_vector_operations();
-        test_loss_functions();
-        test_simple_neural_network();
+        test_operations();
+        // test_basic_operations();
+        // test_composite_function();
+        // test_activation_functions();
+        // test_vector_operations();
+        // test_loss_functions();
+        // test_simple_neural_network();
         
         std::cout << "\n✅ 所有测试完成！" << std::endl;
         

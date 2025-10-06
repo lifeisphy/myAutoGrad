@@ -1,7 +1,7 @@
 # C++ 自动微分框架 Makefile
 
 CXX = g++
-CXXFLAGS = -std=c++14 -Wall -Wextra -O2
+CXXFLAGS = -std=c++23 -Wall -Wextra -O2
 TARGET1 = autograd_demo
 TARGET2 = autograd_test
 SOURCE1 = demo.cpp

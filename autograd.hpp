@@ -12,6 +12,7 @@
 #include <ranges>
 
 // 前向声明
+using namespace std;
 class Variable;
 using VarPtr = std::shared_ptr<Variable>;
 
@@ -113,11 +114,11 @@ public:
     }
     bool is_vector() const
     {
-        return shape_.size() == 1 && shape_[0] > 1;
+        return ndim() == 1 && shape_[0] > 1;
     }
     bool is_matrix() const
     {
-        return shape_.size() == 2 && shape_[0] > 1 && shape_[1] > 1;
+        return ndim() == 2 && shape_[0] > 1 && shape_[1] > 1;
     }
     // 访问器
     const std::vector<double> &data() const { return data_; }
@@ -134,8 +135,17 @@ public:
             data_[i] -= learning_rate * grad_[i];
         }
     }
+    void set_data(std::vector<double>& new_data){
+        // if(!is_variable()){
+        //     throw std::runtime_error("Cannot set data for constant variable");
+        // }
+        if(new_data.size() != data_.size()){
+            throw std::runtime_error("New data size does not match");
+        }
+        data_ = new_data;
+    }
     // 获取标量值（仅适用于单元素）
-    double item() const
+    double& item()
     {
         if (!is_scalar())
         {
@@ -145,7 +155,7 @@ public:
     }
 
     // 获取梯度标量值（仅适用于单元素）
-    double grad_item() const
+    double& grad_item()
     {
         if (!has_grad() || !is_scalar())
         {
@@ -213,11 +223,6 @@ public:
         }
 
         // 累积梯度
-        if (grad_.size() != grad_out.size())
-        {
-            grad_.resize(grad_out.size(), 0.0);
-        }
-
         for (size_t i = 0; i < grad_.size(); ++i)
         {
             grad_[i] += grad_out[i];
@@ -230,6 +235,17 @@ public:
         }
     }
 
+    void forward(){
+        if(is_variable() && forward_fn_){
+            forward_fn_();
+        }
+    }
+    void recursive_zero_grad(){
+        zero_grad();
+        for(auto &child: children_){
+            child->recursive_zero_grad();
+        }
+    }
     /**
      * 清零梯度
      */
@@ -266,10 +282,10 @@ public:
                 std::cout << ", ";
         }
         std::cout << "], shape=(";
-        for(size_t i = 0; i < shape_.size(); ++i)
+        for(size_t i = 0; i < ndim(); ++i)
         {
             std::cout << shape_[i];
-            if (i < shape_.size() - 1)
+            if (i < ndim() - 1)
                 std::cout << ", ";
         }
         std::cout << "), type=" << type_;
@@ -288,15 +304,15 @@ public:
         std::cout << ")" << std::endl;
     }
     // 通过扁平索引获取多维索引
-    std::vector<int> PlainItemIndex(size_t flat_index)
+    const std::vector<int> PlainItemIndex(const size_t flat_index) const
     {
         if (flat_index >= size())
         {
             throw std::runtime_error("Flat index out of bounds");
         }
-        std::vector<int> idx(shape_.size());
+        std::vector<int> idx(ndim(), 0);
         size_t temp = flat_index;
-        for (int i = shape_.size() - 1; i >= 0; i--)
+        for (int i = ndim() - 1; i >= 0; i--)
         {
             idx[i] = temp % shape_[i];
             temp /= shape_[i];
@@ -304,7 +320,7 @@ public:
         return idx;
     }
     // 索引访问函数，支持多维索引
-    size_t ItemIndex(const std::vector<int> &idx)
+    const size_t ItemIndex(const std::vector<int> &idx) const
     {
         if (idx.size() != shape().size())
         { // dimension match
@@ -418,13 +434,12 @@ std::vector<int> get_broadcast_idx(const std::vector<int>& result_idx,
 VarPtr add(VarPtr a, VarPtr b)
 {
 
-    size_t len = std::max(a->shape().size(), b->shape().size());
+    size_t len = std::max(a->ndim(), b->ndim());
     std::vector<size_t> result_shape(len);
     for (size_t i=0; i < len; i++)
     { // 确定结果shape
-
-        size_t a_dim = (i <  a->shape().size()) ? a->shape()[a->shape().size()-i-1] : 1;
-        size_t b_dim = (i < b->shape().size()) ? b->shape()[b->shape().size()-i-1] : 1;
+        size_t a_dim = (i <  a->ndim()) ? a->shape()[a->ndim()-i-1] : 1;
+        size_t b_dim = (i < b->ndim()) ? b->shape()[b->ndim()-i-1] : 1;
         if (a_dim != b_dim && a_dim != 1 && b_dim != 1)
         {
             throw std::runtime_error("Incompatible sizes for addition");
@@ -500,13 +515,13 @@ VarPtr add(VarPtr a, VarPtr b)
 // 减法运算
 VarPtr sub(VarPtr a, VarPtr b){
 
-    size_t len = std::max(a->shape().size(), b->shape().size());
+    size_t len = std::max(a->ndim(), b->ndim());
     std::vector<size_t> result_shape(len);
     for (size_t i=0; i < len; i++)
     { // 确定结果shape
 
-        size_t a_dim = (i <  a->shape().size()) ? a->shape()[a->shape().size()-i-1] : 1;
-        size_t b_dim = (i < b->shape().size()) ? b->shape()[b->shape().size()-i-1] : 1;
+        size_t a_dim = (i <  a->ndim()) ? a->shape()[a->ndim()-i-1] : 1;
+        size_t b_dim = (i < b->ndim()) ? b->shape()[b->ndim()-i-1] : 1;
         if (a_dim != b_dim && a_dim != 1 && b_dim != 1)
         {
             throw std::runtime_error("Incompatible sizes for subtraction");
@@ -569,9 +584,14 @@ VarPtr sub(VarPtr a, VarPtr b){
         };
 
         result->set_grad_fn(grad_fn);
-        result->add_child(a);
-        result->add_child(b);
     }
+    if(is_var){
+        result->set_forward_fn(forward_fn);
+    }else {
+        forward_fn();
+    }
+    result->add_child(a);
+    result->add_child(b);
 
     return result;
 }
@@ -580,13 +600,13 @@ VarPtr sub(VarPtr a, VarPtr b){
 
 // 元素级乘法
 VarPtr mul_elementwise(VarPtr a, VarPtr b) {
-    size_t len = std::max(a->shape().size(), b->shape().size());
+    size_t len = std::max(a->ndim(), b->ndim());
     std::vector<size_t> result_shape(len);
     
     // 计算结果形状（从右对齐的广播）
     for (size_t i = 0; i < len; i++) {
-        size_t a_dim = (i < a->shape().size()) ? a->shape()[a->shape().size()-i-1] : 1;
-        size_t b_dim = (i < b->shape().size()) ? b->shape()[b->shape().size()-i-1] : 1;
+        size_t a_dim = (i < a->ndim()) ? a->shape()[a->ndim()-i-1] : 1;
+        size_t b_dim = (i < b->ndim()) ? b->shape()[b->ndim()-i-1] : 1;
         if (a_dim != b_dim && a_dim != 1 && b_dim != 1) {
             throw std::runtime_error("Incompatible sizes for element-wise multiplication");
         }
@@ -663,6 +683,60 @@ VarPtr mul_elementwise(VarPtr a, VarPtr b) {
 
 }
 
+VarPtr tensor(VarPtr a, VarPtr b){
+    size_t len = a->size() * b->size();
+    bool requires_grad = a->requires_grad() || b->requires_grad();
+    std::vector<size_t> shape(a->ndim() + b->ndim());
+    // fill in the shape
+    for(size_t i=0; i < a->ndim(); i++){
+        shape[i] = a->shape()[i];
+    }
+    for(size_t j=0; j < b->ndim(); j++){
+        shape[a->ndim()+j] = b->shape()[j];
+    }
+    bool is_var = a->is_variable() || b->is_variable();
+    VarPtr result = make_var(std::vector<double>(len), requires_grad, shape,is_var);
+    if(result->requires_grad()){
+        auto grad_fn = [a, b, result, len](const std::vector<double> &grad_output){
+            if(a->requires_grad()){
+                std::vector<double> grad_a(a->size(), 0.0);
+                for(size_t i = 0; i < len; i++){
+                    std::vector<int> result_idx = result->PlainItemIndex(i);
+                    std::vector<int> a_idx(result_idx.begin(), result_idx.begin()+a->ndim());
+                    std::vector<int> b_idx(result_idx.begin()+a->ndim(), result_idx.end());
+                    grad_a[a->ItemIndex(a_idx)] += grad_output[i] * b->Item(b_idx);
+                }
+                a->backward(grad_a);
+            }
+            if(b->requires_grad()){
+                std::vector<double> grad_b(b->size(), 0.0);
+                for(size_t i = 0; i < len; i++){
+                    std::vector<int> result_idx = result->PlainItemIndex(i);
+                    std::vector<int> a_idx(result_idx.begin(), result_idx.begin()+a->ndim());
+                    std::vector<int> b_idx(result_idx.begin()+a->ndim(), result_idx.end());
+                    grad_b[b->ItemIndex(b_idx)] += grad_output[i] * a->Item(a_idx);
+                }
+                b->backward(grad_b);
+            }
+        };
+        result->set_grad_fn(grad_fn);
+    }
+    auto forward_fn = [a, b, result, len](){
+        for(size_t i = 0; i < len; i++){
+            std::vector<int> result_idx = result->PlainItemIndex(i);
+            result->Item(i) = a->Item(std::vector<int>(result_idx.begin(), result_idx.begin()+a->ndim())) *
+                                b->Item(std::vector<int>(result_idx.begin()+a->ndim(), result_idx.end()));
+        }
+    };
+    if(is_var){
+        result->set_forward_fn(forward_fn);
+    }else{
+        forward_fn();
+    }
+    result->add_child(a);
+    result->add_child(b);
+    return result;
+}
 VarPtr mul(VarPtr a, VarPtr b, int axis_a = -1, int axis_b = -1)
 {
     if (axis_a == -1 && axis_b == -1) {
@@ -670,10 +744,10 @@ VarPtr mul(VarPtr a, VarPtr b, int axis_a = -1, int axis_b = -1)
     }
     // 张量乘法：沿指定轴收缩
     // 检查轴的有效性
-    if (axis_a < 0) axis_a += a->shape().size();
-    if (axis_b < 0) axis_b += b->shape().size();
+    if (axis_a < 0) axis_a += a->ndim();
+    if (axis_b < 0) axis_b += b->ndim();
     
-    if (axis_a >= static_cast<int>(a->shape().size()) || axis_b >= static_cast<int>(b->shape().size()) ||
+    if (axis_a >= static_cast<int>(a->ndim()) || axis_b >= static_cast<int>(b->ndim()) ||
         axis_a < 0 || axis_b < 0) {
         throw std::runtime_error("Invalid axis for tensor multiplication");
     }
@@ -687,12 +761,12 @@ VarPtr mul(VarPtr a, VarPtr b, int axis_a = -1, int axis_b = -1)
     
     // 计算结果形状
     std::vector<size_t> result_shape;
-    for (size_t i = 0; i < a->shape().size(); i++) {
+    for (size_t i = 0; i < a->ndim(); i++) {
         if (i != static_cast<size_t>(axis_a)) {
             result_shape.push_back(a->shape()[i]);
         }
     }
-    for (size_t i = 0; i < b->shape().size(); i++) {
+    for (size_t i = 0; i < b->ndim(); i++) {
         if (i != static_cast<size_t>(axis_b)) {
             result_shape.push_back(b->shape()[i]);
         }
@@ -866,14 +940,6 @@ VarPtr mul(VarPtr a, VarPtr b, int axis_a = -1, int axis_b = -1)
     return result;
 }
 
-// VarPtr pow(VarPtr a, VarPtr b){
-//     if(a->is_matrix() ) {
-//         if(a->shape()[0] != a->shape()[1])
-//             throw std::runtime_error("Pow operation only supports square matrix inputs.");
-//         return mul(a,a,1,0); // 矩阵乘法
-//     }else if(a->is_scalar()){
-//     }
-// }
 VarPtr pow_elementwise(VarPtr a, double exponent){
     
     std::vector<double> result_data(a->size());
@@ -1125,7 +1191,6 @@ VarPtr binary_cross_entropy_loss(VarPtr predictions, VarPtr targets)
     {
         throw std::runtime_error("Predictions and targets must have the same size");
     }
-
     std::vector<double> loss_data(predictions->size());
     auto result = make_var(loss_data);
 

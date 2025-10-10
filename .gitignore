@@ -1,2 +1,6 @@
-.vscode
+
 ml
+a.out
+*.o
+.vscode/
+build/

@@ -18,26 +18,49 @@ using VarPtr = std::shared_ptr<Variable>;
 /**
  * 支持自动微分的变量类
  */
+enum Nodetype {
+    intermediate,
+    parameter,
+    input
+};
+std::ostream& operator<<(std::ostream &os, const Nodetype &type){
+    switch(type){
+        case intermediate:
+            os << "intermediate";
+            break;
+        case parameter:
+            os << "parameter";
+            break;
+        case input:
+            os << "input";
+            break;
+        default:
+            os << "unknown";
+    }
+    return os;
+}
 class Variable
 {
 private:
     std::vector<double> data_;
     std::vector<double> grad_;
-    bool requires_grad_;
+    // bool requires_grad_;
+    Nodetype type_;
     std::function<void(const std::vector<double> &)> grad_fn_;
+    std::function<void()> forward_fn_; 
     std::vector<VarPtr> children_;
     std::vector<size_t> shape_;
-
 public:
+    bool has_grad() const { return type_ == parameter || type_ == intermediate; }
     /**
      * 构造函数
      * @param data 数值数据
      * @param requires_grad 是否需要梯度计算
      */
-    explicit Variable(double value, bool requires_grad = false, const std::vector<size_t> &shape = {})
-        : data_({value}), requires_grad_(requires_grad), shape_(shape)
+    explicit Variable(double value, Nodetype type, const std::vector<size_t> &shape = {})
+        : data_({value}), type_(type), shape_(shape)
     {
-        if (requires_grad_)
+        if (type_ == parameter || type_ == intermediate)
         {
             grad_ = std::vector<double>(1, 0.0);
         }
@@ -53,10 +76,10 @@ public:
      * @param data 数值向量
      * @param requires_grad 是否需要梯度计算
      */
-    explicit Variable(const std::vector<double> &data, bool requires_grad = false, const std::vector<size_t> &shape = {})
-        : data_(data), requires_grad_(requires_grad), shape_(shape)
+    explicit Variable(const std::vector<double> &data, Nodetype type, const std::vector<size_t> &shape = {})
+        : data_(data), type_(type), shape_(shape)
     {
-        if (requires_grad_)
+        if (has_grad())
         {
             grad_ = std::vector<double>(data.size(), 0.0);
         }
@@ -99,7 +122,7 @@ public:
     // 访问器
     const std::vector<double> &data() const { return data_; }
     const std::vector<double> &grad() const { return grad_; }
-    bool requires_grad() const { return requires_grad_; }
+    Nodetype type() const { return type_; }
     size_t size() const { return data_.size(); }
     std::vector<size_t> shape() const { return shape_; }
 
@@ -124,13 +147,30 @@ public:
     // 获取梯度标量值（仅适用于单元素）
     double grad_item() const
     {
-        if (!requires_grad_ || !is_scalar())
+        if (!has_grad() || !is_scalar())
         {
             throw std::runtime_error("grad_item() can only be called on scalar variables with gradients");
         }
         return grad_[0];
     }
-
+    void set_input(const double new_data){
+        if(type_ != input){
+            throw std::runtime_error("Only input variable can set data");
+        }
+        if(data_.size() != 1){
+            throw std::runtime_error("This variable is not a scalar");
+        }
+        data_[0] = new_data;
+    }
+    void set_input(const std::vector<double>& new_data){
+        if(type_ != input){
+            throw std::runtime_error("Only input variable can set data");
+        }
+        if(new_data.size() != data_.size()){
+            throw std::runtime_error("New data size does not match");
+        }
+        data_ = new_data;
+    }
     /**
      * 设置梯度函数
      */
@@ -138,7 +178,10 @@ public:
     {
         grad_fn_ = grad_fn;
     }
-
+    void set_forward_fn(std::function<void()> forward_fn)
+    {
+        forward_fn_ = forward_fn;
+    }
     /**
      * 添加子节点
      */
@@ -146,14 +189,19 @@ public:
     {
         children_.push_back(child);
     }
-
+    void calc(){
+        for(auto & child: children_){
+            child->calc();
+        }
+        this->forward();
+    }
     /**
      * 反向传播计算梯度
      * @param grad_output 从上游传来的梯度
      */
     void backward(const std::vector<double> &grad_output = {})
     {
-        if (!requires_grad_)
+        if (!has_grad())
             return;
 
         std::vector<double> grad_out = grad_output;
@@ -187,12 +235,24 @@ public:
      */
     void zero_grad()
     {
-        if (requires_grad_)
+        if (has_grad())
         {
             std::fill(grad_.begin(), grad_.end(), 0.0);
         }
     }
-
+    void forward(){
+        if(type_ == intermediate && forward_fn_){
+            forward_fn_();
+        }
+    }
+    void zero_grad_recursive()
+    {
+        zero_grad();
+        for (auto &child : children_)
+        {
+            child->zero_grad_recursive();
+        }
+    }
     /**
      * 打印变量信息
      */
@@ -212,9 +272,9 @@ public:
             if (i < shape_.size() - 1)
                 std::cout << ", ";
         }
-        std::cout << "), requires_grad=" << std::boolalpha << requires_grad_;
+        std::cout << "), type=" << type_;
 
-        if (requires_grad_ && !grad_.empty())
+        if (has_grad() && !grad_.empty())
         {
             std::cout << ", grad=[";
             for (size_t i = 0; i < grad_.size(); ++i)
@@ -275,26 +335,63 @@ public:
     {
         return data()[ItemIndex(idx)];
     }
+    double& Item(size_t flat_index)
+    {
+        if (flat_index >= size())
+        {
+            throw std::runtime_error("Flat index out of bounds");
+        }
+        return data_[flat_index];
+    }
     // 通过多维索引获取梯度
     double GradItem(const std::vector<int> &idx)
     {
-        if (!requires_grad())
+        if (!has_grad())
         {
             throw std::runtime_error("This variable does not require gradient");
         }
         return grad()[ItemIndex(idx)];
     }
+    double& GradItem(size_t flat_index)
+    {
+        if (!has_grad())
+        {
+            throw std::runtime_error("This variable does not require gradient");
+        }
+        if (flat_index >= size())
+        {
+            throw std::runtime_error("Flat index out of bounds");
+        }
+        return grad_[flat_index];
+    }
 };
 
 // 工具函数：创建Variable的智能指针
-VarPtr make_var(double value, bool requires_grad = false)
+VarPtr make_var(double value)
 {
-    return std::make_shared<Variable>(value, requires_grad);
+    return std::make_shared<Variable>(value, intermediate);
 }
 
-VarPtr make_var(const std::vector<double> &data, bool requires_grad = false, const std::vector<size_t> &shape = {})
+VarPtr make_var(const std::vector<double> &data, const std::vector<size_t> &shape = {})
 {
-    return std::make_shared<Variable>(data, requires_grad, shape);
+    return std::make_shared<Variable>(data, intermediate, shape);
+}
+
+VarPtr make_param(double value, const std::vector<size_t> &shape = {})
+{
+    return std::make_shared<Variable>(value, parameter, shape);
+}
+VarPtr make_param(const std::vector<double> &data, const std::vector<size_t> &shape = {})
+{
+    return std::make_shared<Variable>(data, parameter, shape);
+}
+VarPtr make_input(double value, const std::vector<size_t> &shape = {})
+{
+    return std::make_shared<Variable>(value, input, shape);
+}
+VarPtr make_input(const std::vector<double> &data, const std::vector<size_t> &shape = {})
+{
+    return std::make_shared<Variable>(data, input, shape);
 }
 
 // get broadcasted index
@@ -341,57 +438,61 @@ VarPtr add(VarPtr a, VarPtr b)
     }
 
     std::vector<double> result_data(result_size);
-    bool requires_grad = a->requires_grad() || b->requires_grad();
-    
+    auto result = make_var(result_data, result_shape);
     // 执行加法（支持广播）
-    for (size_t i = 0; i < result_size; i++)
-    {
-        // 使用辅助函数创建临时变量来获取索引
-        auto temp_result = make_var(std::vector<double>(result_size), false, result_shape);
-        std::vector<int> result_idx = temp_result->PlainItemIndex(i);
+    auto forward_fn = [a, b, result, result_size, result_shape]() {
+        // 先递归计算依赖的节点
+        if (a->type() == intermediate) a->forward();
+        if (b->type() == intermediate) b->forward();
         
-        // 计算广播后的 a 和 b 索引
-        
-        std::vector<int> a_idx = get_broadcast_idx(result_idx, a->shape());
-        std::vector<int> b_idx = get_broadcast_idx(result_idx, b->shape());
-        
-        double a_val = (a->shape().empty()) ? a->data()[0] : a->Item(a_idx);
-        double b_val = (b->shape().empty()) ? b->data()[0] : b->Item(b_idx);
-        result_data[i] = a_val + b_val;
-    }
-    
-    auto result = make_var(result_data, requires_grad, result_shape);
-
-    if (requires_grad)
-    {
-        auto grad_fn = [a, b, result, result_shape, result_size](const std::vector<double> &grad_output)
+        for (size_t i = 0; i < result_size; i++)
         {
-            if (a->requires_grad())
-            {
-                std::vector<double> grad_a(a->size(), 0.0);
-                for (size_t i = 0; i < result_size; i++)
-                {
-                    std::vector<int> a_idx = get_broadcast_idx(result->PlainItemIndex(i), a->shape());
-                    grad_a[a->ItemIndex(a_idx)] += grad_output[i];
-                }
-                a->backward(grad_a);
-            }
-            if (b->requires_grad())
-            {
-                std::vector<double> grad_b(b->size(), 0.0);
-                for (size_t i = 0; i < result_size; i++)
-                {
-                    std::vector<int> b_idx = get_broadcast_idx(result->PlainItemIndex(i), b->shape());
-                    grad_b[b->ItemIndex(b_idx)] += grad_output[i];
-                }
-                b->backward(grad_b);
-            }
-        };
+            // 直接使用 result 变量计算索引，避免创建临时变量
+            std::vector<int> result_idx = result->PlainItemIndex(i);
+            
+            // 计算广播后的 a 和 b 索引
+            std::vector<int> a_idx = get_broadcast_idx(result_idx, a->shape());
+            std::vector<int> b_idx = get_broadcast_idx(result_idx, b->shape());
+            
+            double a_val = (a->shape().empty()) ? a->data()[0] : a->Item(a_idx);
+            double b_val = (b->shape().empty()) ? b->data()[0] : b->Item(b_idx);
+            result->Item(i) = a_val + b_val;
+        }
+    };
 
-        result->set_grad_fn(grad_fn);
-        result->add_child(a);
-        result->add_child(b);
-    }
+    // 设置前向函数
+    result->set_forward_fn(forward_fn);
+
+    
+
+
+    auto grad_fn = [a, b, result, result_shape, result_size](const std::vector<double> &grad_output)
+    {
+        if (a->has_grad())
+        {
+            std::vector<double> grad_a(a->size(), 0.0);
+            for (size_t i = 0; i < result_size; i++)
+            {
+                std::vector<int> a_idx = get_broadcast_idx(result->PlainItemIndex(i), a->shape());
+                grad_a[a->ItemIndex(a_idx)] += grad_output[i];
+            }
+            a->backward(grad_a);
+        }
+        if (b->has_grad())
+        {
+            std::vector<double> grad_b(b->size(), 0.0);
+            for (size_t i = 0; i < result_size; i++)
+            {
+                std::vector<int> b_idx = get_broadcast_idx(result->PlainItemIndex(i), b->shape());
+                grad_b[b->ItemIndex(b_idx)] += grad_output[i];
+            }
+            b->backward(grad_b);
+        }
+    };
+
+    result->set_grad_fn(grad_fn);
+    result->add_child(a);
+    result->add_child(b);
 
     return result;
 }
@@ -419,32 +520,33 @@ VarPtr sub(VarPtr a, VarPtr b){
     }
 
     std::vector<double> result_data(result_size);
-    bool requires_grad = a->requires_grad() || b->requires_grad();
+    auto result = make_var(result_data, result_shape);
     
-    // 执行加法（支持广播）
-    for (size_t i = 0; i < result_size; i++)
-    {
-        // 使用辅助函数创建临时变量来获取索引
-        auto temp_result = make_var(std::vector<double>(result_size), false, result_shape);
-        std::vector<int> result_idx = temp_result->PlainItemIndex(i);
-        
-        // 计算广播后的 a 和 b 索引
-        
-        std::vector<int> a_idx = get_broadcast_idx(result_idx, a->shape());
-        std::vector<int> b_idx = get_broadcast_idx(result_idx, b->shape());
-        
-        double a_val = (a->shape().empty()) ? a->data()[0] : a->Item(a_idx);
-        double b_val = (b->shape().empty()) ? b->data()[0] : b->Item(b_idx);
-        result_data[i] = a_val - b_val;
-    }
-    
-    auto result = make_var(result_data, requires_grad, result_shape);
+    // 添加前向函数
+    auto forward_fn = [a, b, result, result_size, result_shape]() {
+        for (size_t i = 0; i < result_size; i++)
+        {
+            // 直接使用 result 变量计算索引，避免创建临时变量
+            std::vector<int> result_idx = result->PlainItemIndex(i);
+            
+            // 计算广播后的 a 和 b 索引
+            std::vector<int> a_idx = get_broadcast_idx(result_idx, a->shape());
+            std::vector<int> b_idx = get_broadcast_idx(result_idx, b->shape());
+            
+            double a_val = (a->shape().empty()) ? a->data()[0] : a->Item(a_idx);
+            double b_val = (b->shape().empty()) ? b->data()[0] : b->Item(b_idx);
+            result->Item(i) = a_val - b_val;
+        }
+    };
 
-    if (requires_grad)
+    // 设置前向函数
+    result->set_forward_fn(forward_fn);
+
+    if (a->has_grad() || b->has_grad())
     {
         auto grad_fn = [a, b, result, result_shape, result_size](const std::vector<double> &grad_output)
         {
-            if (a->requires_grad())
+            if (a->has_grad())
             {
                 std::vector<double> grad_a(a->size(), 0.0);
                 for (size_t i = 0; i < result_size; i++)
@@ -454,7 +556,7 @@ VarPtr sub(VarPtr a, VarPtr b){
                 }
                 a->backward(grad_a);
             }
-            if (b->requires_grad())
+            if (b->has_grad())
             {
                 std::vector<double> grad_b(b->size(), 0.0);
                 for (size_t i = 0; i < result_size; i++)
@@ -497,64 +599,65 @@ VarPtr mul_elementwise(VarPtr a, VarPtr b) {
     }
     
     std::vector<double> result_data(result_size);
+    auto result = make_var(result_data, result_shape);
     
-    // 执行广播乘法
-    for (size_t i = 0; i < result_size; i++) {
-        auto temp_result = make_var(std::vector<double>(result_size), false, result_shape);
-        std::vector<int> result_idx = temp_result->PlainItemIndex(i);
-        
-        std::vector<int> a_idx = get_broadcast_idx(result_idx, a->shape());
-        std::vector<int> b_idx = get_broadcast_idx(result_idx, b->shape());
-        
-        double a_val = (a->shape().empty()) ? a->data()[0] : a->Item(a_idx);
-        double b_val = (b->shape().empty()) ? b->data()[0] : b->Item(b_idx);
-        result_data[i] = a_val * b_val;
-    }
-    
-    bool requires_grad = a->requires_grad() || b->requires_grad();
-    auto result = make_var(result_data, requires_grad, result_shape);
-    
-    if (requires_grad) {
-        auto grad_fn = [a, b, result, result_shape, result_size](const std::vector<double> &grad_output) {
-            if (a->requires_grad()) {
-                std::vector<double> grad_a(a->size(), 0.0);
-                for (size_t i = 0; i < result_size; i++) {
-                    std::vector<int> a_idx = get_broadcast_idx(result->PlainItemIndex(i), a->shape());
-                    std::vector<int> b_idx = get_broadcast_idx(result->PlainItemIndex(i), b->shape());
-                    
-                    double b_val = (b->shape().empty()) ? b->data()[0] : b->Item(b_idx);
-                    
-                    if (a->shape().empty()) {
-                        grad_a[0] += grad_output[i] * b_val;
-                    } else {
-                        grad_a[a->ItemIndex(a_idx)] += grad_output[i] * b_val;
-                    }
-                }
-                a->backward(grad_a);
-            }
+    // 添加前向函数
+    auto forward_fn = [a, b, result, result_size, result_shape]() {
+        for (size_t i = 0; i < result_size; i++) {
+            // 直接使用 result 变量计算索引，避免创建临时变量
+            std::vector<int> result_idx = result->PlainItemIndex(i);
             
-            if (b->requires_grad()) {
-                std::vector<double> grad_b(b->size(), 0.0);
-                for (size_t i = 0; i < result_size; i++) {
-                    std::vector<int> a_idx = get_broadcast_idx(result->PlainItemIndex(i), a->shape());
-                    std::vector<int> b_idx = get_broadcast_idx(result->PlainItemIndex(i), b->shape());
-                    
-                    double a_val = (a->shape().empty()) ? a->data()[0] : a->Item(a_idx);
-                    
-                    if (b->shape().empty()) {
-                        grad_b[0] += grad_output[i] * a_val;
-                    } else {
-                        grad_b[b->ItemIndex(b_idx)] += grad_output[i] * a_val;
-                    }
+            std::vector<int> a_idx = get_broadcast_idx(result_idx, a->shape());
+            std::vector<int> b_idx = get_broadcast_idx(result_idx, b->shape());
+            
+            double a_val = (a->shape().empty()) ? a->data()[0] : a->Item(a_idx);
+            double b_val = (b->shape().empty()) ? b->data()[0] : b->Item(b_idx);
+            result->Item(i) = a_val * b_val;
+        }
+    };
+
+    // 设置前向函数
+    result->set_forward_fn(forward_fn);
+    
+    auto grad_fn = [a, b, result, result_shape, result_size](const std::vector<double> &grad_output) {
+        if (a->has_grad()) {
+            std::vector<double> grad_a(a->size(), 0.0);
+            for (size_t i = 0; i < result_size; i++) {
+                std::vector<int> a_idx = get_broadcast_idx(result->PlainItemIndex(i), a->shape());
+                std::vector<int> b_idx = get_broadcast_idx(result->PlainItemIndex(i), b->shape());
+                
+                double b_val = (b->shape().empty()) ? b->data()[0] : b->Item(b_idx);
+                
+                if (a->shape().empty()) {
+                    grad_a[0] += grad_output[i] * b_val;
+                } else {
+                    grad_a[a->ItemIndex(a_idx)] += grad_output[i] * b_val;
                 }
-                b->backward(grad_b);
             }
-        };
+            a->backward(grad_a);
+        }
         
-        result->set_grad_fn(grad_fn);
-        result->add_child(a);
-        result->add_child(b);
-    }
+        if (b->has_grad()) {
+            std::vector<double> grad_b(b->size(), 0.0);
+            for (size_t i = 0; i < result_size; i++) {
+                std::vector<int> a_idx = get_broadcast_idx(result->PlainItemIndex(i), a->shape());
+                std::vector<int> b_idx = get_broadcast_idx(result->PlainItemIndex(i), b->shape());
+                
+                double a_val = (a->shape().empty()) ? a->data()[0] : a->Item(a_idx);
+                
+                if (b->shape().empty()) {
+                    grad_b[0] += grad_output[i] * a_val;
+                } else {
+                    grad_b[b->ItemIndex(b_idx)] += grad_output[i] * a_val;
+                }
+            }
+            b->backward(grad_b);
+        }
+    };
+    result->set_grad_fn(grad_fn);
+    result->add_child(a);
+    result->add_child(b);
+
     
     return result;
 
@@ -605,157 +708,160 @@ VarPtr mul(VarPtr a, VarPtr b, int axis_a = -1, int axis_b = -1)
     }
     
     std::vector<double> result_data(result_size, 0.0);
+    auto result = make_var(result_data, result_shape);
     
-    // 执行张量乘法
-    for (size_t res_i = 0; res_i < result_size; res_i++) {
-        auto temp_result = make_var(std::vector<double>(result_size), false, result_shape);
-        std::vector<int> result_idx = temp_result->PlainItemIndex(res_i);
-        
-        // 构造 a 和 b 的完整索引
-        std::vector<int> full_a_idx(a->shape().size());
-        std::vector<int> full_b_idx(b->shape().size());
-        
-        // 填充 a 的索引（跳过收缩轴）
-        size_t a_idx_pos = 0;
-        for (size_t i = 0; i < a->shape().size(); i++) {
-            if (i != static_cast<size_t>(axis_a)) {
-                if (a_idx_pos < result_idx.size()) {
-                    full_a_idx[i] = result_idx[a_idx_pos++];
-                }
-            }
-        }
-        
-        // 填充 b 的索引（跳过收缩轴）
-        size_t b_idx_pos = a->shape().size() - 1; // b 的索引从 a 的维度之后开始
-        if (static_cast<size_t>(axis_a) < a->shape().size()) {
-            b_idx_pos--; // 因为跳过了 a 的收缩轴
-        }
-        
-        for (size_t i = 0; i < b->shape().size(); i++) {
-            if (i != static_cast<size_t>(axis_b)) {
-                if (b_idx_pos < result_idx.size()) {
-                    full_b_idx[i] = result_idx[b_idx_pos++];
-                }
-            }
-        }
-        
-        // 沿收缩维度求和
-        for (size_t k = 0; k < contract_dim_a; k++) {
-            full_a_idx[axis_a] = k;
-            full_b_idx[axis_b] = k;
+    // 添加前向函数
+    auto forward_fn = [a, b, result, result_size, result_shape, axis_a, axis_b, contract_dim_a]() {
+        // 执行张量乘法
+        for (size_t res_i = 0; res_i < result_size; res_i++) {
+            std::vector<int> result_idx = result->PlainItemIndex(res_i);
             
-            double a_val = a->Item(full_a_idx);
-            double b_val = b->Item(full_b_idx);
-            result_data[res_i] += a_val * b_val;
-        }
-    }
-    
-    bool requires_grad = a->requires_grad() || b->requires_grad();
-    auto result = make_var(result_data, requires_grad, result_shape);
-    
-    if (requires_grad) {
-        auto grad_fn = [a, b, result, axis_a, axis_b, contract_dim_a](const std::vector<double> &grad_output) {
-            if (a->requires_grad()) {
-                std::vector<double> grad_a(a->size(), 0.0);
-                // 实现张量乘法的反向传播
-                // grad_a[i,j,k] = sum_l (grad_output[i,j,l] * b[k,l])  (假设沿最后一维收缩)
-                // 这里需要根据具体的轴来计算
-                for (size_t a_i = 0; a_i < a->size(); a_i++) {
-                    std::vector<int> a_idx = a->PlainItemIndex(a_i);
-                    
-                    for (size_t res_i = 0; res_i < result->size(); res_i++) {
-                        std::vector<int> result_idx = result->PlainItemIndex(res_i);
-                        
-                        // 构造对应的 b 索引
-                        std::vector<int> b_idx(b->shape().size());
-                        b_idx[axis_b] = a_idx[axis_a];
-                        
-                        // 填充 b 的其他维度索引
-                        size_t b_dim_pos = a->shape().size() - 1;
-                        if (static_cast<size_t>(axis_a) < a->shape().size()) b_dim_pos--;
-                        
-                        for (size_t i = 0; i < b->shape().size(); i++) {
-                            if (i != static_cast<size_t>(axis_b)) {
-                                if (b_dim_pos < result_idx.size()) {
-                                    b_idx[i] = result_idx[b_dim_pos++];
-                                }
-                            }
-                        }
-                        
-                        // 检查 a 的索引是否匹配结果索引
-                        bool match = true;
-                        size_t a_dim_pos = 0;
-                        for (size_t i = 0; i < a->shape().size(); i++) {
-                            if (i != static_cast<size_t>(axis_a)) {
-                                if (a_dim_pos < result_idx.size() && a_idx[i] != result_idx[a_dim_pos]) {
-                                    match = false;
-                                    break;
-                                }
-                                a_dim_pos++;
-                            }
-                        }
-                        
-                        if (match) {
-                            double b_val = b->Item(b_idx);
-                            grad_a[a_i] += grad_output[res_i] * b_val;
-                        }
+            // 构造 a 和 b 的完整索引
+            std::vector<int> full_a_idx(a->shape().size());
+            std::vector<int> full_b_idx(b->shape().size());
+            
+            // 填充 a 的索引（跳过收缩轴）
+            size_t a_idx_pos = 0;
+            for (size_t i = 0; i < a->shape().size(); i++) {
+                if (i != static_cast<size_t>(axis_a)) {
+                    if (a_idx_pos < result_idx.size()) {
+                        full_a_idx[i] = result_idx[a_idx_pos++];
                     }
                 }
-                a->backward(grad_a);
             }
             
-            if (b->requires_grad()) {
-                std::vector<double> grad_b(b->size(), 0.0);
-                // 类似地计算 b 的梯度
-                for (size_t b_i = 0; b_i < b->size(); b_i++) {
-                    std::vector<int> b_idx = b->PlainItemIndex(b_i);
-                    
-                    for (size_t res_i = 0; res_i < result->size(); res_i++) {
-                        std::vector<int> result_idx = result->PlainItemIndex(res_i);
-                        
-                        // 构造对应的 a 索引
-                        std::vector<int> a_idx(a->shape().size());
-                        a_idx[axis_a] = b_idx[axis_b];
-                        
-                        // 填充 a 的其他维度索引
-                        size_t a_dim_pos = 0;
-                        for (size_t i = 0; i < a->shape().size(); i++) {
-                            if (i != static_cast<size_t>(axis_a)) {
-                                if (a_dim_pos < result_idx.size()) {
-                                    a_idx[i] = result_idx[a_dim_pos++];
-                                }
-                            }
-                        }
-                        
-                        // 检查 b 的索引是否匹配结果索引
-                        bool match = true;
-                        size_t b_dim_pos = a->shape().size() - 1;
-                        if (static_cast<size_t>(axis_a) < a->shape().size()) b_dim_pos--;
-                        
-                        for (size_t i = 0; i < b->shape().size(); i++) {
-                            if (i != static_cast<size_t>(axis_b)) {
-                                if (b_dim_pos < result_idx.size() && b_idx[i] != result_idx[b_dim_pos]) {
-                                    match = false;
-                                    break;
-                                }
-                                b_dim_pos++;
-                            }
-                        }
-                        
-                        if (match) {
-                            double a_val = a->Item(a_idx);
-                            grad_b[b_i] += grad_output[res_i] * a_val;
-                        }
+            // 填充 b 的索引（跳过收缩轴）
+            size_t b_idx_pos = a->shape().size() - 1; // b 的索引从 a 的维度之后开始
+            if (static_cast<size_t>(axis_a) < a->shape().size()) {
+                b_idx_pos--; // 因为跳过了 a 的收缩轴
+            }
+            
+            for (size_t i = 0; i < b->shape().size(); i++) {
+                if (i != static_cast<size_t>(axis_b)) {
+                    if (b_idx_pos < result_idx.size()) {
+                        full_b_idx[i] = result_idx[b_idx_pos++];
                     }
                 }
-                b->backward(grad_b);
             }
-        };
+            
+            // 初始化结果为0
+            result->Item(res_i) = 0.0;
+            // 沿收缩维度求和
+            for (size_t k = 0; k < contract_dim_a; k++) {
+                full_a_idx[axis_a] = k;
+                full_b_idx[axis_b] = k;
+                
+                double a_val = a->Item(full_a_idx);
+                double b_val = b->Item(full_b_idx);
+                result->Item(res_i) += a_val * b_val;
+            }
+        }
+    };
+
+    // 设置前向函数
+    result->set_forward_fn(forward_fn);
+
+    auto grad_fn = [a, b, result, axis_a, axis_b, contract_dim_a](const std::vector<double> &grad_output) {
+        if (a->has_grad()) {
+            std::vector<double> grad_a(a->size(), 0.0);
+            // 实现张量乘法的反向传播
+            // grad_a[i,j,k] = sum_l (grad_output[i,j,l] * b[k,l])  (假设沿最后一维收缩)
+            // 这里需要根据具体的轴来计算
+            for (size_t a_i = 0; a_i < a->size(); a_i++) {
+                std::vector<int> a_idx = a->PlainItemIndex(a_i);
+                
+                for (size_t res_i = 0; res_i < result->size(); res_i++) {
+                    std::vector<int> result_idx = result->PlainItemIndex(res_i);
+                    
+                    // 构造对应的 b 索引
+                    std::vector<int> b_idx(b->shape().size());
+                    b_idx[axis_b] = a_idx[axis_a];
+                    
+                    // 填充 b 的其他维度索引
+                    size_t b_dim_pos = a->shape().size() - 1;
+                    if (static_cast<size_t>(axis_a) < a->shape().size()) b_dim_pos--;
+                    
+                    for (size_t i = 0; i < b->shape().size(); i++) {
+                        if (i != static_cast<size_t>(axis_b)) {
+                            if (b_dim_pos < result_idx.size()) {
+                                b_idx[i] = result_idx[b_dim_pos++];
+                            }
+                        }
+                    }
+                    
+                    // 检查 a 的索引是否匹配结果索引
+                    bool match = true;
+                    size_t a_dim_pos = 0;
+                    for (size_t i = 0; i < a->shape().size(); i++) {
+                        if (i != static_cast<size_t>(axis_a)) {
+                            if (a_dim_pos < result_idx.size() && a_idx[i] != result_idx[a_dim_pos]) {
+                                match = false;
+                                break;
+                            }
+                            a_dim_pos++;
+                        }
+                    }
+                    
+                    if (match) {
+                        double b_val = b->Item(b_idx);
+                        grad_a[a_i] += grad_output[res_i] * b_val;
+                    }
+                }
+            }
+            a->backward(grad_a);
+        }
         
-        result->set_grad_fn(grad_fn);
-        result->add_child(a);
-        result->add_child(b);
-    }
+        if (b->has_grad()) {
+            std::vector<double> grad_b(b->size(), 0.0);
+            // 类似地计算 b 的梯度
+            for (size_t b_i = 0; b_i < b->size(); b_i++) {
+                std::vector<int> b_idx = b->PlainItemIndex(b_i);
+                
+                for (size_t res_i = 0; res_i < result->size(); res_i++) {
+                    std::vector<int> result_idx = result->PlainItemIndex(res_i);
+                    
+                    // 构造对应的 a 索引
+                    std::vector<int> a_idx(a->shape().size());
+                    a_idx[axis_a] = b_idx[axis_b];
+                    
+                    // 填充 a 的其他维度索引
+                    size_t a_dim_pos = 0;
+                    for (size_t i = 0; i < a->shape().size(); i++) {
+                        if (i != static_cast<size_t>(axis_a)) {
+                            if (a_dim_pos < result_idx.size()) {
+                                a_idx[i] = result_idx[a_dim_pos++];
+                            }
+                        }
+                    }
+                    
+                    // 检查 b 的索引是否匹配结果索引
+                    bool match = true;
+                    size_t b_dim_pos = a->shape().size() - 1;
+                    if (static_cast<size_t>(axis_a) < a->shape().size()) b_dim_pos--;
+                    
+                    for (size_t i = 0; i < b->shape().size(); i++) {
+                        if (i != static_cast<size_t>(axis_b)) {
+                            if (b_dim_pos < result_idx.size() && b_idx[i] != result_idx[b_dim_pos]) {
+                                match = false;
+                                break;
+                            }
+                            b_dim_pos++;
+                        }
+                    }
+                    
+                    if (match) {
+                        double a_val = a->Item(a_idx);
+                        grad_b[b_i] += grad_output[res_i] * a_val;
+                    }
+                }
+            }
+            b->backward(grad_b);
+        }
+    };
+        
+    result->set_grad_fn(grad_fn);
+    result->add_child(a);
+    result->add_child(b);
     
     return result;
 }
@@ -771,34 +877,34 @@ VarPtr mul(VarPtr a, VarPtr b, int axis_a = -1, int axis_b = -1)
 VarPtr pow_elementwise(VarPtr a, double exponent){
     
     std::vector<double> result_data(a->size());
+    auto result = make_var(result_data);
 
-    for (size_t i = 0; i < a->size(); ++i)
-    {
-        result_data[i] = std::pow(a->data()[i], exponent);
-    }
-
-    bool requires_grad = a->requires_grad();
-    auto result = make_var(result_data, requires_grad);
-
-    if (requires_grad)
-    {
-        auto grad_fn = [a, exponent](const std::vector<double> &grad_output)
+    // 添加前向函数
+    auto forward_fn = [a, result, exponent]() {
+        for (size_t i = 0; i < a->size(); ++i)
         {
-            if (a->requires_grad())
-            {
-                std::vector<double> grad_a(a->size());
-                for (size_t i = 0; i < a->size(); ++i)
-                {
-                    // d/dx (x^n) = n * x^(n-1)
-                    grad_a[i] = grad_output[i] * exponent * std::pow(a->data()[i], exponent - 1);
-                }
-                a->backward(grad_a);
-            }
-        };
+            result->Item(i) = std::pow(a->data()[i], exponent);
+        }
+    };
 
-        result->set_grad_fn(grad_fn);
-        result->add_child(a);
-    }
+    // 设置前向函数
+    result->set_forward_fn(forward_fn);
+    auto grad_fn = [a, exponent](const std::vector<double> &grad_output)
+    {
+        if (a->has_grad())
+        {
+            std::vector<double> grad_a(a->size());
+            for (size_t i = 0; i < a->size(); ++i)
+            {
+                // d/dx (x^n) = n * x^(n-1)
+                grad_a[i] = grad_output[i] * exponent * std::pow(a->data()[i], exponent - 1);
+            }
+            a->backward(grad_a);
+        }
+    };
+
+    result->set_grad_fn(grad_fn);
+    result->add_child(a);
 
     return result;
 }
@@ -806,30 +912,32 @@ VarPtr pow_elementwise(VarPtr a, double exponent){
 // 求和运算
 VarPtr sum(VarPtr a)
 {
-    double sum_val = 0.0;
-    for (double val : a->data())
-    {
-        sum_val += val;
-    }
+    auto result = make_var(0.0);
 
-    bool requires_grad = a->requires_grad();
-    auto result = make_var(sum_val, requires_grad);
-
-    if (requires_grad)
-    {
-        auto grad_fn = [a](const std::vector<double> &grad_output)
+    // 添加前向函数
+    auto forward_fn = [a, result]() {
+        double sum_val = 0.0;
+        for (double val : a->data())
         {
-            if (a->requires_grad())
-            {
-                // 梯度广播到所有元素
-                std::vector<double> grad_a(a->size(), grad_output[0]);
-                a->backward(grad_a);
-            }
-        };
+            sum_val += val;
+        }
+        result->Item(0) = sum_val;
+    };
 
-        result->set_grad_fn(grad_fn);
-        result->add_child(a);
-    }
+    // 设置前向函数
+    result->set_forward_fn(forward_fn);
+    auto grad_fn = [a](const std::vector<double> &grad_output)
+    {
+        if (a->has_grad())
+        {
+            // 梯度广播到所有元素
+            std::vector<double> grad_a(a->size(), grad_output[0]);
+            a->backward(grad_a);
+        }
+    };
+
+    result->set_grad_fn(grad_fn);
+    result->add_child(a);
 
     return result;
 }
@@ -837,32 +945,36 @@ VarPtr sum(VarPtr a)
 // 平均值运算
 VarPtr mean(VarPtr a)
 {
-    double sum_val = 0.0;
-    for (double val : a->data())
-    {
-        sum_val += val;
-    }
-    double mean_val = sum_val / a->size();
+    auto result = make_var(0.0);
 
-    bool requires_grad = a->requires_grad();
-    auto result = make_var(mean_val, requires_grad);
-
-    if (requires_grad)
-    {
-        auto grad_fn = [a](const std::vector<double> &grad_output)
+    // 添加前向函数
+    auto forward_fn = [a, result]() {
+        double sum_val = 0.0;
+        for (double val : a->data())
         {
-            if (a->requires_grad())
-            {
-                // 梯度平均分配到所有元素
-                double grad_per_element = grad_output[0] / a->size();
-                std::vector<double> grad_a(a->size(), grad_per_element);
-                a->backward(grad_a);
-            }
-        };
+            sum_val += val;
+        }
+        double mean_val = sum_val / a->size();
+        result->Item(0) = mean_val;
+    };
 
-        result->set_grad_fn(grad_fn);
-        result->add_child(a);
-    }
+    // 设置前向函数
+    result->set_forward_fn(forward_fn);
+
+    auto grad_fn = [a](const std::vector<double> &grad_output)
+    {
+        if (a->has_grad())
+        {
+            // 梯度平均分配到所有元素
+            double grad_per_element = grad_output[0] / a->size();
+            std::vector<double> grad_a(a->size(), grad_per_element);
+            a->backward(grad_a);
+        }
+    };
+
+    result->set_grad_fn(grad_fn);
+    result->add_child(a);
+    
 
     return result;
 }
@@ -875,34 +987,37 @@ VarPtr mean(VarPtr a)
 VarPtr relu(VarPtr a)
 {
     std::vector<double> result_data(a->size());
+    auto result = make_var(result_data);
 
-    for (size_t i = 0; i < a->size(); ++i)
-    {
-        result_data[i] = std::max(0.0, a->data()[i]);
-    }
-
-    bool requires_grad = a->requires_grad();
-    auto result = make_var(result_data, requires_grad);
-
-    if (requires_grad)
-    {
-        auto grad_fn = [a](const std::vector<double> &grad_output)
+    // 添加前向函数
+    auto forward_fn = [a, result]() {
+        for (size_t i = 0; i < a->size(); ++i)
         {
-            if (a->requires_grad())
-            {
-                std::vector<double> grad_a(a->size());
-                for (size_t i = 0; i < a->size(); ++i)
-                {
-                    // ReLU的导数：x > 0 时为1，否则为0
-                    grad_a[i] = (a->data()[i] > 0) ? grad_output[i] : 0.0;
-                }
-                a->backward(grad_a);
-            }
-        };
+            result->Item(i) = std::max(0.0, a->data()[i]);
+        }
+    };
 
-        result->set_grad_fn(grad_fn);
-        result->add_child(a);
-    }
+    // 设置前向函数
+    result->set_forward_fn(forward_fn);
+
+
+    auto grad_fn = [a](const std::vector<double> &grad_output)
+    {
+        if (a->has_grad())
+        {
+            std::vector<double> grad_a(a->size());
+            for (size_t i = 0; i < a->size(); ++i)
+            {
+                // ReLU的导数：x > 0 时为1，否则为0
+                grad_a[i] = (a->data()[i] > 0) ? grad_output[i] : 0.0;
+            }
+            a->backward(grad_a);
+        }
+    };
+
+    result->set_grad_fn(grad_fn);
+    result->add_child(a);
+    
 
     return result;
 }
@@ -911,35 +1026,37 @@ VarPtr relu(VarPtr a)
 VarPtr sigmoid(VarPtr a)
 {
     std::vector<double> result_data(a->size());
+    auto result = make_var(result_data);
 
-    for (size_t i = 0; i < a->size(); ++i)
-    {
-        result_data[i] = 1.0 / (1.0 + std::exp(-a->data()[i]));
-    }
-
-    bool requires_grad = a->requires_grad();
-    auto result = make_var(result_data, requires_grad);
-
-    if (requires_grad)
-    {
-        auto grad_fn = [a, result](const std::vector<double> &grad_output)
+    // 添加前向函数
+    auto forward_fn = [a, result]() {
+        for (size_t i = 0; i < a->size(); ++i)
         {
-            if (a->requires_grad())
-            {
-                std::vector<double> grad_a(a->size());
-                for (size_t i = 0; i < a->size(); ++i)
-                {
-                    // Sigmoid的导数：sigmoid(x) * (1 - sigmoid(x))
-                    double sigmoid_val = result->data()[i];
-                    grad_a[i] = grad_output[i] * sigmoid_val * (1.0 - sigmoid_val);
-                }
-                a->backward(grad_a);
-            }
-        };
+            result->Item(i) = 1.0 / (1.0 + std::exp(-a->data()[i]));
+        }
+    };
 
-        result->set_grad_fn(grad_fn);
-        result->add_child(a);
-    }
+    // 设置前向函数
+    result->set_forward_fn(forward_fn);
+
+    auto grad_fn = [a, result](const std::vector<double> &grad_output)
+    {
+        if (a->has_grad())
+        {
+            std::vector<double> grad_a(a->size());
+            for (size_t i = 0; i < a->size(); ++i)
+            {
+                // Sigmoid的导数：sigmoid(x) * (1 - sigmoid(x))
+                double sigmoid_val = result->data()[i];
+                grad_a[i] = grad_output[i] * sigmoid_val * (1.0 - sigmoid_val);
+            }
+            a->backward(grad_a);
+        }
+    };
+
+    result->set_grad_fn(grad_fn);
+    result->add_child(a);
+    
 
     return result;
 }
@@ -948,35 +1065,37 @@ VarPtr sigmoid(VarPtr a)
 VarPtr tanh_activation(VarPtr a)
 {
     std::vector<double> result_data(a->size());
+    auto result = make_var(result_data);
 
-    for (size_t i = 0; i < a->size(); ++i)
-    {
-        result_data[i] = std::tanh(a->data()[i]);
-    }
-
-    bool requires_grad = a->requires_grad();
-    auto result = make_var(result_data, requires_grad);
-
-    if (requires_grad)
-    {
-        auto grad_fn = [a, result](const std::vector<double> &grad_output)
+    // 添加前向函数
+    auto forward_fn = [a, result]() {
+        for (size_t i = 0; i < a->size(); ++i)
         {
-            if (a->requires_grad())
-            {
-                std::vector<double> grad_a(a->size());
-                for (size_t i = 0; i < a->size(); ++i)
-                {
-                    // Tanh的导数：1 - tanh²(x)
-                    double tanh_val = result->data()[i];
-                    grad_a[i] = grad_output[i] * (1.0 - tanh_val * tanh_val);
-                }
-                a->backward(grad_a);
-            }
-        };
+            result->Item(i) = std::tanh(a->data()[i]);
+        }
+    };
 
-        result->set_grad_fn(grad_fn);
-        result->add_child(a);
-    }
+    // 设置前向函数
+    result->set_forward_fn(forward_fn);
+
+    auto grad_fn = [a, result](const std::vector<double> &grad_output)
+    {
+        if (a->has_grad())
+        {
+            std::vector<double> grad_a(a->size());
+            for (size_t i = 0; i < a->size(); ++i)
+            {
+                // Tanh的导数：1 - tanh²(x)
+                double tanh_val = result->data()[i];
+                grad_a[i] = grad_output[i] * (1.0 - tanh_val * tanh_val);
+            }
+            a->backward(grad_a);
+        }
+    };
+
+    result->set_grad_fn(grad_fn);
+    result->add_child(a);
+
 
     return result;
 }
@@ -1008,48 +1127,46 @@ VarPtr binary_cross_entropy_loss(VarPtr predictions, VarPtr targets)
     }
 
     std::vector<double> loss_data(predictions->size());
+    auto result = make_var(loss_data);
 
-    for (size_t i = 0; i < predictions->size(); ++i)
-    {
-        double pred = predictions->data()[i];
-        double target = targets->data()[i];
-
-        // 防止log(0)
-        pred = std::max(1e-15, std::min(1.0 - 1e-15, pred));
-
-        // BCE = -[target * log(pred) + (1 - target) * log(1 - pred)]
-        loss_data[i] = -(target * std::log(pred) + (1.0 - target) * std::log(1.0 - pred));
-    }
-
-    bool requires_grad = predictions->requires_grad() || targets->requires_grad();
-    auto result = make_var(loss_data, requires_grad);
-
-    if (requires_grad)
-    {
-        auto grad_fn = [predictions, targets](const std::vector<double> &grad_output)
+    // 添加前向函数
+    auto forward_fn = [predictions, targets, result]() {
+        for (size_t i = 0; i < predictions->size(); ++i)
         {
-            if (predictions->requires_grad())
+            double pred = predictions->data()[i];
+            double target = targets->data()[i];
+            // 防止log(0)
+            pred = std::max(1e-15, std::min(1.0 - 1e-15, pred));
+            // BCE = -[target * log(pred) + (1 - target) * log(1 - pred)]
+            result->Item(i) = -(target * std::log(pred) + (1.0 - target) * std::log(1.0 - pred));
+        }
+    };
+
+    // 设置前向函数
+    result->set_forward_fn(forward_fn);
+
+    auto grad_fn = [predictions, targets](const std::vector<double> &grad_output)
+    {
+        if (predictions->has_grad())
+        {
+            std::vector<double> grad_pred(predictions->size());
+            for (size_t i = 0; i < predictions->size(); ++i)
             {
-                std::vector<double> grad_pred(predictions->size());
-                for (size_t i = 0; i < predictions->size(); ++i)
-                {
-                    double pred = predictions->data()[i];
-                    double target = targets->data()[i];
+                double pred = predictions->data()[i];
+                double target = targets->data()[i];
 
-                    // 防止除零
-                    pred = std::max(1e-15, std::min(1.0 - 1e-15, pred));
+                // 防止除零
+                pred = std::max(1e-15, std::min(1.0 - 1e-15, pred));
 
-                    // BCE对prediction的导数：-(target/pred - (1-target)/(1-pred))
-                    grad_pred[i] = grad_output[i] * (-(target / pred) + (1.0 - target) / (1.0 - pred));
-                }
-                predictions->backward(grad_pred);
+                // BCE对prediction的导数：-(target/pred - (1-target)/(1-pred))
+                grad_pred[i] = grad_output[i] * (-(target / pred) + (1.0 - target) / (1.0 - pred));
             }
-        };
-
-        result->set_grad_fn(grad_fn);
-        result->add_child(predictions);
-        result->add_child(targets);
-    }
+            predictions->backward(grad_pred);
+        }
+    };
+    result->set_grad_fn(grad_fn);
+    result->add_child(predictions);
+    result->add_child(targets);
 
     return mean(result); // 返回平均损失
 }

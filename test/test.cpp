@@ -13,9 +13,10 @@ double numerical_gradient(std::function<double(double)> func, double x, double h
     return (func(x + h) - func(x - h)) / (2 * h);
 }
 void test_operations(){
-    auto a = make_var(vec{1.0,2.0,3.0,4.0}, true, {2,1,2});
-    auto b = make_var(vec{1,2},true,{2,1});
+    auto a = make_var(vec{1.0,2.0,3.0,4.0}, {2,1,2});
+    auto b = make_var(vec{1,2},{2,1});
     auto c = add(a,b);
+    c->calc();
     c->backward();
     c->print();
     a->print();
@@ -26,10 +27,10 @@ void test_basic_operations() {
     std::cout << "\n=== 测试基础运算 ===" << std::endl;
     
     // 测试加法
-    auto a = make_var(2.0, true);
-    auto b = make_var(3.0, true);
+    auto a = make_var(2.0);
+    auto b = make_var(3.0);
     auto c = add(a, b);
-    
+    c->calc();
     c->backward();
     
     std::cout << "加法测试: 2 + 3 = " << c->item() << std::endl;
@@ -40,6 +41,7 @@ void test_basic_operations() {
     a->zero_grad();
     b->zero_grad();
     auto d = mul(a, b);
+    d->calc();
     d->backward();
     
     std::cout << "\n乘法测试: 2 * 3 = " << d->item() << std::endl;
@@ -52,12 +54,12 @@ void test_composite_function() {
     std::cout << "\n=== 测试复合函数 ===" << std::endl;
     
     // 测试 f(x) = x^2 + 2*x + 1 在 x=3 处
-    auto x = make_var(3.0, true);
+    auto x = make_var(3.0);
     auto x_squared = mul(x, x);
     auto two_x = mul(make_var(2.0), x);
     auto temp = add(x_squared, two_x);
     auto y = add(temp, make_var(1.0));
-    
+    y->calc();
     y->backward();
     
     std::cout << "f(3) = 3^2 + 2*3 + 1 = " << y->item() << " (期望: 16)" << std::endl;
@@ -76,32 +78,36 @@ void test_activation_functions() {
     std::cout << "\n=== 测试激活函数 ===" << std::endl;
     
     // 测试ReLU
-    auto x1 = make_var(2.0, true);
+    auto x1 = make_var(2.0);
     auto relu_result = relu(x1);
+    relu_result->calc();
     relu_result->backward();
     
     std::cout << "ReLU(2.0) = " << relu_result->item() << " (期望: 2.0)" << std::endl;
     std::cout << "ReLU'(2.0) = " << x1->grad_item() << " (期望: 1.0)" << std::endl;
     
     // 测试负值的ReLU
-    auto x2 = make_var(-1.0, true);
+    auto x2 = make_var(-1.0);
     auto relu_result2 = relu(x2);
+    relu_result2->calc();
     relu_result2->backward();
     
     std::cout << "ReLU(-1.0) = " << relu_result2->item() << " (期望: 0.0)" << std::endl;
     std::cout << "ReLU'(-1.0) = " << x2->grad_item() << " (期望: 0.0)" << std::endl;
     
     // 测试Sigmoid
-    auto x3 = make_var(0.0, true);
+    auto x3 = make_var(0.0);
     auto sigmoid_result = sigmoid(x3);
+    sigmoid_result->calc();
     sigmoid_result->backward();
     
     std::cout << "\\nSigmoid(0.0) = " << sigmoid_result->item() << " (期望: 0.5)" << std::endl;
     std::cout << "Sigmoid'(0.0) = " << x3->grad_item() << " (期望: 0.25)" << std::endl;
     
     // 测试Tanh
-    auto x4 = make_var(0.0, true);
+    auto x4 = make_var(0.0);
     auto tanh_result = tanh_activation(x4);
+    tanh_result->calc();
     tanh_result->backward();
     
     std::cout << "Tanh(0.0) = " << tanh_result->item() << " (期望: 0.0)" << std::endl;
@@ -116,13 +122,13 @@ void test_vector_operations() {
     std::vector<double> data1 = {1.0, 2.0, 3.0};
     std::vector<double> data2 = {4.0, 5.0, 6.0};
     
-    auto vec1 = make_var(data1, true);
-    auto vec2 = make_var(data2, true);
+    auto vec1 = make_var(data1);
+    auto vec2 = make_var(data2);
     
     // 向量加法
     auto vec_sum = add(vec1, vec2);
     auto sum_result = sum(vec_sum);  // 求总和
-    
+    sum_result->calc();
     sum_result->backward();
     
     std::cout << "向量求和结果: " << sum_result->item() << " (期望: 21.0)" << std::endl;
@@ -138,10 +144,10 @@ void test_vector_operations() {
     vec1->zero_grad();
     vec2->zero_grad();
     
-    auto scalar = make_var(2.0, true);
+    auto scalar = make_var(2.0);
     auto broadcast_mul = mul(vec1, scalar);
     auto broadcast_sum = sum(broadcast_mul);
-    
+    broadcast_sum->calc();
     broadcast_sum->backward();
     
     std::cout << "\\n广播乘法求和: " << broadcast_sum->item() << " (期望: 12.0)" << std::endl;
@@ -156,10 +162,11 @@ void test_loss_functions() {
     std::vector<double> pred_data = {1.0, 2.0, 3.0};
     std::vector<double> target_data = {1.5, 2.5, 2.5};
     
-    auto predictions = make_var(pred_data, true);
-    auto targets = make_var(target_data, false);
+    auto predictions = make_var(pred_data);
+    auto targets = make_var(target_data);
     
     auto mse = mse_loss(predictions, targets);
+    mse->calc();
     mse->backward();
     
     std::cout << "MSE损失: " << mse->item() << std::endl;
@@ -175,10 +182,11 @@ void test_loss_functions() {
     std::vector<double> prob_data = {0.7, 0.3, 0.8};
     std::vector<double> label_data = {1.0, 0.0, 1.0};
     
-    auto probs = make_var(prob_data, true);
-    auto labels = make_var(label_data, false);
+    auto probs = make_var(prob_data);
+    auto labels = make_var(label_data);
     
     auto bce = binary_cross_entropy_loss(probs, labels);
+    bce->calc();
     bce->backward();
     
     std::cout << "\\n二元交叉熵损失: " << bce->item() << std::endl;
@@ -196,13 +204,13 @@ void test_simple_neural_network() {
     std::cout << "\n=== 简单神经网络示例 ===" << std::endl;
     
     // 输入数据
-    auto x = make_var(0.5, false);
+    auto x = make_var(0.5);
     
     // 权重和偏置
-    auto w1 = make_var(0.3, true);
-    auto b1 = make_var(0.1, true);
-    auto w2 = make_var(0.7, true);
-    auto b2 = make_var(0.2, true);
+    auto w1 = make_var(0.3);
+    auto b1 = make_var(0.1);
+    auto w2 = make_var(0.7);
+    auto b2 = make_var(0.2);
     
     // 前向传播: x -> linear -> sigmoid -> linear -> sigmoid
     auto z1 = add(mul(x, w1), b1);
@@ -211,7 +219,7 @@ void test_simple_neural_network() {
     auto output = sigmoid(z2);
     
     // 目标值
-    auto target = make_var(0.8, false);
+    auto target = make_var(0.8);
     
     // 计算损失
     auto loss = mse_loss(output, target);

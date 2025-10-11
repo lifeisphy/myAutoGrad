@@ -1,6 +1,9 @@
-
 ml
 a.out
 *.o
 .vscode/
 build/
+autograd_demo
+autograd_test
+test/mnist_cnn_demo
+mnist_data/

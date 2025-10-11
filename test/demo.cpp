@@ -51,9 +51,9 @@ int main() {
     std::cout << "\n5. 简单神经网络训练示例:" << std::endl;
 
     std::vector<double> w_real = normal_distribution_vector(n_input * n_output, 2.0, 0.1);
-    auto x = make_var(std::vector<double>(n_input,0.0), false, {n_input}, false);
-    auto y = make_var(std::vector<double>(n_output,0.0), false, {n_output}, false);
-    auto w = make_var(std::vector<double>(n_input * n_output, 0.0), true, {n_input, n_output}, true);
+    auto x = make_input(std::vector<double>(n_input,0.0), {n_input});
+    auto y = make_input(std::vector<double>(n_output,0.0), {n_output});
+    auto w = make_param(std::vector<double>(n_input * n_output, 0.0), {n_input, n_output});
     auto yhat = mul(w,x,0,0);
     auto loss = mse_loss(yhat, y);
     double learning_rate = 0.01;
@@ -69,10 +69,10 @@ int main() {
     for (int epoch = 0; epoch < 50; ++epoch) {
         double total_loss = 0.0;
         for(int i=0; i < ndata; i++){
-            x->set_data(x_data[i]);
-            y->set_data(y_data[i]);
-            loss->recursive_zero_grad();
-            loss->forward();
+            x->set_input(x_data[i]);
+            y->set_input(y_data[i]);
+            loss->zero_grad_recursive();
+            loss->calc();
             loss->backward();
             w->update(learning_rate);
             total_loss += loss->item();
@@ -96,10 +96,10 @@ int main() {
     auto test_x = std::vector<double>(n_input, 0.0);
     auto test_y = std::vector<double>(n_output, 0.0);
     gen_xy(test_x, test_y, w_real);
-    x->set_data(test_x);
-    yhat->forward();
-    // y->set_data(test_y);
-    // loss->forward();
+    x->set_input(test_x);
+    yhat->calc();
+    // y->set_input(test_y);
+    // loss->calc();
     std::cout<< "yhat: ";
     yhat->print();
     std::cout<< "y_real: ";

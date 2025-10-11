@@ -3,7 +3,7 @@
  * 演示基础运算、激活函数、损失函数和梯度计算
  */
 
-#include "autograd.hpp"
+#include "../autograd.hpp"
 #include <iostream>
 #include <cassert>
 #include <cmath>

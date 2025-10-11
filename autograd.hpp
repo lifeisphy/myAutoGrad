@@ -996,7 +996,7 @@ VarPtr mean(VarPtr a)
 VarPtr relu(VarPtr a)
 {
     std::vector<double> result_data(a->size());
-    auto result = make_var(result_data);
+    auto result = make_var(result_data, a->shape());
 
     // 添加前向函数
     auto forward_fn = [a, result]() {
@@ -1035,7 +1035,7 @@ VarPtr relu(VarPtr a)
 VarPtr sigmoid(VarPtr a)
 {
     std::vector<double> result_data(a->size());
-    auto result = make_var(result_data);
+    auto result = make_var(result_data, a->shape());
 
     // 添加前向函数
     auto forward_fn = [a, result]() {
@@ -1074,7 +1074,7 @@ VarPtr sigmoid(VarPtr a)
 VarPtr tanh_activation(VarPtr a)
 {
     std::vector<double> result_data(a->size());
-    auto result = make_var(result_data);
+    auto result = make_var(result_data, a->shape());
 
     // 添加前向函数
     auto forward_fn = [a, result]() {
@@ -1179,6 +1179,323 @@ VarPtr binary_cross_entropy_loss(VarPtr predictions, VarPtr targets)
 
     return mean(result); // 返回平均损失
 }
+
+/**
+ * CNN Operations
+ */
+
+// Reshape operation - changes shape without changing data
+VarPtr reshape(VarPtr a, const std::vector<size_t>& new_shape) {
+    // Verify total size matches
+    size_t new_size = 1;
+    for (size_t dim : new_shape) {
+        new_size *= dim;
+    }
+    if (new_size != a->size()) {
+        throw std::runtime_error("Reshape: new shape total size must match original size");
+    }
+    
+    // Create result with same data but different shape
+    std::vector<double> result_data = a->data();
+    auto result = std::make_shared<Variable>(result_data, intermediate, new_shape);
+    
+    // Forward function - copy data from input
+    auto forward_fn = [a, result]() {
+        const auto& a_data = a->data();
+        for (size_t i = 0; i < result->size(); i++) {
+            result->Item(i) = a_data[i];
+        }
+    };
+    
+    // Gradient function - pass gradients through unchanged
+    auto grad_fn = [a](const std::vector<double>& grad_output) {
+        if (a->has_grad()) {
+            a->backward(grad_output);
+        }
+    };
+    
+    result->set_forward_fn(forward_fn);
+    result->set_grad_fn(grad_fn);
+    result->add_child(a);
+    
+    return result;
+}
+
+// Flatten operation - converts multi-dimensional tensor to 1D
+VarPtr flatten(VarPtr a) {
+    return reshape(a, {a->size()});
+}
+
+// 2D Convolution operation (simplified version)
+// Input shape: [batch_size * in_channels, height, width] or flattened
+// Kernel shape: [out_channels, in_channels, kernel_h, kernel_w]
+// Output shape: [batch_size * out_channels, out_h, out_w]
+VarPtr conv2d(VarPtr input, VarPtr kernel, size_t in_channels, size_t out_channels, 
+              size_t kernel_h, size_t kernel_w, size_t stride = 1, size_t padding = 0) {
+    
+    auto input_shape = input->shape();
+    if (input_shape.size() != 3) {
+        throw std::runtime_error("Conv2d: input must be 3D [channels, height, width]");
+    }
+    
+    size_t in_h = input_shape[1];
+    size_t in_w = input_shape[2];
+    
+    size_t out_h = (in_h + 2 * padding - kernel_h) / stride + 1;
+    size_t out_w = (in_w + 2 * padding - kernel_w) / stride + 1;
+    
+    size_t out_size = out_channels * out_h * out_w;
+    std::vector<double> result_data(out_size, 0.0);
+    auto result = std::make_shared<Variable>(result_data, intermediate, 
+                                            std::vector<size_t>{out_channels, out_h, out_w});
+    
+    // Forward function
+    auto forward_fn = [input, kernel, result, in_channels, out_channels, 
+                       in_h, in_w, kernel_h, kernel_w, out_h, out_w, stride, padding]() {
+        const auto& input_data = input->data();
+        const auto& kernel_data = kernel->data();
+        
+        // Initialize output to 0
+        for (size_t i = 0; i < result->size(); i++) {
+            result->Item(i) = 0.0;
+        }
+        
+        // Perform convolution
+        for (size_t oc = 0; oc < out_channels; oc++) {
+            for (size_t oh = 0; oh < out_h; oh++) {
+                for (size_t ow = 0; ow < out_w; ow++) {
+                    double sum = 0.0;
+                    for (size_t ic = 0; ic < in_channels; ic++) {
+                        for (size_t kh = 0; kh < kernel_h; kh++) {
+                            for (size_t kw = 0; kw < kernel_w; kw++) {
+                                int ih = oh * stride + kh - padding;
+                                int iw = ow * stride + kw - padding;
+                                
+                                if (ih >= 0 && ih < (int)in_h && iw >= 0 && iw < (int)in_w) {
+                                    size_t input_idx = ic * in_h * in_w + ih * in_w + iw;
+                                    size_t kernel_idx = oc * in_channels * kernel_h * kernel_w + 
+                                                       ic * kernel_h * kernel_w + kh * kernel_w + kw;
+                                    sum += input_data[input_idx] * kernel_data[kernel_idx];
+                                }
+                            }
+                        }
+                    }
+                    size_t output_idx = oc * out_h * out_w + oh * out_w + ow;
+                    result->Item(output_idx) = sum;
+                }
+            }
+        }
+    };
+    
+    // Gradient function
+    auto grad_fn = [input, kernel, result, in_channels, out_channels,
+                    in_h, in_w, kernel_h, kernel_w, out_h, out_w, stride, padding]
+                   (const std::vector<double>& grad_output) {
+        // Backprop to input
+        if (input->has_grad()) {
+            std::vector<double> grad_input(input->size(), 0.0);
+            const auto& kernel_data = kernel->data();
+            
+            for (size_t oc = 0; oc < out_channels; oc++) {
+                for (size_t oh = 0; oh < out_h; oh++) {
+                    for (size_t ow = 0; ow < out_w; ow++) {
+                        size_t output_idx = oc * out_h * out_w + oh * out_w + ow;
+                        double grad_out_val = grad_output[output_idx];
+                        
+                        for (size_t ic = 0; ic < in_channels; ic++) {
+                            for (size_t kh = 0; kh < kernel_h; kh++) {
+                                for (size_t kw = 0; kw < kernel_w; kw++) {
+                                    int ih = oh * stride + kh - padding;
+                                    int iw = ow * stride + kw - padding;
+                                    
+                                    if (ih >= 0 && ih < (int)in_h && iw >= 0 && iw < (int)in_w) {
+                                        size_t input_idx = ic * in_h * in_w + ih * in_w + iw;
+                                        size_t kernel_idx = oc * in_channels * kernel_h * kernel_w + 
+                                                           ic * kernel_h * kernel_w + kh * kernel_w + kw;
+                                        grad_input[input_idx] += grad_out_val * kernel_data[kernel_idx];
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            input->backward(grad_input);
+        }
+        
+        // Backprop to kernel
+        if (kernel->has_grad()) {
+            std::vector<double> grad_kernel(kernel->size(), 0.0);
+            const auto& input_data = input->data();
+            
+            for (size_t oc = 0; oc < out_channels; oc++) {
+                for (size_t oh = 0; oh < out_h; oh++) {
+                    for (size_t ow = 0; ow < out_w; ow++) {
+                        size_t output_idx = oc * out_h * out_w + oh * out_w + ow;
+                        double grad_out_val = grad_output[output_idx];
+                        
+                        for (size_t ic = 0; ic < in_channels; ic++) {
+                            for (size_t kh = 0; kh < kernel_h; kh++) {
+                                for (size_t kw = 0; kw < kernel_w; kw++) {
+                                    int ih = oh * stride + kh - padding;
+                                    int iw = ow * stride + kw - padding;
+                                    
+                                    if (ih >= 0 && ih < (int)in_h && iw >= 0 && iw < (int)in_w) {
+                                        size_t input_idx = ic * in_h * in_w + ih * in_w + iw;
+                                        size_t kernel_idx = oc * in_channels * kernel_h * kernel_w + 
+                                                           ic * kernel_h * kernel_w + kh * kernel_w + kw;
+                                        grad_kernel[kernel_idx] += grad_out_val * input_data[input_idx];
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            kernel->backward(grad_kernel);
+        }
+    };
+    
+    result->set_forward_fn(forward_fn);
+    result->set_grad_fn(grad_fn);
+    result->add_child(input);
+    result->add_child(kernel);
+    
+    return result;
+}
+
+// 2D Max Pooling operation
+VarPtr maxpool2d(VarPtr input, size_t pool_h, size_t pool_w, size_t stride = 2) {
+    auto input_shape = input->shape();
+    if (input_shape.size() != 3) {
+        throw std::runtime_error("MaxPool2d: input must be 3D [channels, height, width]");
+    }
+    
+    size_t channels = input_shape[0];
+    size_t in_h = input_shape[1];
+    size_t in_w = input_shape[2];
+    
+    size_t out_h = (in_h - pool_h) / stride + 1;
+    size_t out_w = (in_w - pool_w) / stride + 1;
+    
+    size_t out_size = channels * out_h * out_w;
+    std::vector<double> result_data(out_size, 0.0);
+    auto result = std::make_shared<Variable>(result_data, intermediate,
+                                            std::vector<size_t>{channels, out_h, out_w});
+    
+    // Store max indices for backward pass
+    auto max_indices = std::make_shared<std::vector<size_t>>(out_size);
+    
+    // Forward function
+    auto forward_fn = [input, result, max_indices, channels, in_h, in_w, 
+                       pool_h, pool_w, out_h, out_w, stride]() {
+        const auto& input_data = input->data();
+        
+        for (size_t c = 0; c < channels; c++) {
+            for (size_t oh = 0; oh < out_h; oh++) {
+                for (size_t ow = 0; ow < out_w; ow++) {
+                    double max_val = -std::numeric_limits<double>::infinity();
+                    size_t max_idx = 0;
+                    
+                    for (size_t ph = 0; ph < pool_h; ph++) {
+                        for (size_t pw = 0; pw < pool_w; pw++) {
+                            size_t ih = oh * stride + ph;
+                            size_t iw = ow * stride + pw;
+                            size_t input_idx = c * in_h * in_w + ih * in_w + iw;
+                            
+                            if (input_data[input_idx] > max_val) {
+                                max_val = input_data[input_idx];
+                                max_idx = input_idx;
+                            }
+                        }
+                    }
+                    
+                    size_t output_idx = c * out_h * out_w + oh * out_w + ow;
+                    result->Item(output_idx) = max_val;
+                    (*max_indices)[output_idx] = max_idx;
+                }
+            }
+        }
+    };
+    
+    // Gradient function
+    auto grad_fn = [input, result, max_indices](const std::vector<double>& grad_output) {
+        if (input->has_grad()) {
+            std::vector<double> grad_input(input->size(), 0.0);
+            
+            for (size_t i = 0; i < result->size(); i++) {
+                grad_input[(*max_indices)[i]] += grad_output[i];
+            }
+            
+            input->backward(grad_input);
+        }
+    };
+    
+    result->set_forward_fn(forward_fn);
+    result->set_grad_fn(grad_fn);
+    result->add_child(input);
+    
+    return result;
+}
+
+// Softmax cross entropy loss for classification
+VarPtr softmax_cross_entropy_loss(VarPtr logits, VarPtr targets) {
+    if (logits->size() != targets->size()) {
+        throw std::runtime_error("Logits and targets must have the same size");
+    }
+    
+    std::vector<double> loss_data(1, 0.0);
+    auto result = std::make_shared<Variable>(loss_data, intermediate, std::vector<size_t>{1});
+    
+    // Store softmax probabilities for backward pass
+    auto softmax_probs = std::make_shared<std::vector<double>>(logits->size());
+    
+    // Forward function
+    auto forward_fn = [logits, targets, result, softmax_probs]() {
+        const auto& logits_data = logits->data();
+        const auto& targets_data = targets->data();
+        
+        // Compute softmax
+        double max_logit = *std::max_element(logits_data.begin(), logits_data.end());
+        double sum_exp = 0.0;
+        for (size_t i = 0; i < logits->size(); i++) {
+            (*softmax_probs)[i] = std::exp(logits_data[i] - max_logit);
+            sum_exp += (*softmax_probs)[i];
+        }
+        for (size_t i = 0; i < logits->size(); i++) {
+            (*softmax_probs)[i] /= sum_exp;
+        }
+        
+        // Compute cross entropy loss
+        double loss = 0.0;
+        for (size_t i = 0; i < logits->size(); i++) {
+            loss -= targets_data[i] * std::log((*softmax_probs)[i] + 1e-10);
+        }
+        result->Item(0) = loss;
+    };
+    
+    // Gradient function
+    auto grad_fn = [logits, targets, softmax_probs](const std::vector<double>& grad_output) {
+        if (logits->has_grad()) {
+            std::vector<double> grad_logits(logits->size());
+            const auto& targets_data = targets->data();
+            
+            for (size_t i = 0; i < logits->size(); i++) {
+                grad_logits[i] = ((*softmax_probs)[i] - targets_data[i]) * grad_output[0];
+            }
+            
+            logits->backward(grad_logits);
+        }
+    };
+    
+    result->set_forward_fn(forward_fn);
+    result->set_grad_fn(grad_fn);
+    result->add_child(logits);
+    result->add_child(targets);
+    
+    return result;
+}
+
 VarPtr operator+(VarPtr a, VarPtr b) { return add(a, b); }
 VarPtr operator-(VarPtr a, VarPtr b) { return sub(a, b); }
 VarPtr operator*(VarPtr a, VarPtr b) { return mul(a, b); }

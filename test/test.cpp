@@ -3,7 +3,7 @@
  * 演示基础运算、激活函数、损失函数和梯度计算
  */
 
-#include "autograd.hpp"
+#include "../autograd.hpp"
 #include <iostream>
 #include <cassert>
 #include <cmath>
@@ -16,8 +16,9 @@ void test_operations(){
     auto a = make_var(vec{1.0,2.0,3.0,4.0}, {2,1,2});
     auto b = make_var(vec{1,2},{2,1});
     auto c = add(a,b);
-    c->calc();
-    c->backward();
+    auto d = sum(c);
+    d->calc();
+    d->backward();
     c->print();
     a->print();
     b->print();

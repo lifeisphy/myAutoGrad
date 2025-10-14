@@ -76,10 +76,12 @@ VarPtr add(VarPtr a, VarPtr b)
 
     auto grad_fn = [ result, result_size](const std::vector<double> &grad_output)
     {
+        // std::cout<<"Add grad_fn called."<<std::endl;
         for(auto edge: result->children()){
             auto node = edge->child;
             if(node == nullptr) continue;
             if(node->has_grad()){
+                // std::cout<<"Computing gradient for "<<node->name<<" in add"<<std::endl;
                 std::vector<double> grad_node(node->size(), 0.0);
                 for (size_t i = 0; i < result_size; i++)
                 {
@@ -360,17 +362,25 @@ VarPtr mul(VarPtr a, VarPtr b, int axis_a = -1, int axis_b = -1)
     auto link_a = add_link(result, a);
     auto link_b = add_link(result, b);
     auto grad_fn = [link_a, link_b, a, b, result, axis_a, axis_b, contract_dim_a](const std::vector<double> &grad_output) {
+        // std::cout<<"Mul grad_fn called."<<std::endl;
         if (a->has_grad()) {
+            // std::cout<<"Computing gradient for "<< a->name <<" in mul"<<std::endl;
+            // std::cout<<"a shape: ";
+            // for(auto d: a->shape()) std::cout<<d<<", ";
+            // std::cout<<std::endl;
+            // std::cout<<"b shape: ";
+            // for(auto d: b->shape()) std::cout<<d<<", ";
+            // std::cout<<std::endl;
             std::vector<double> grad_a(a->size(), 0.0);
             // 实现张量乘法的反向传播
             // grad_a[i,j,k] = sum_l (grad_output[i,j,l] * b[k,l])  (假设沿最后一维收缩)
             // 这里需要根据具体的轴来计算
             for (size_t a_i = 0; a_i < a->size(); a_i++) {
                 std::vector<int> a_idx = a->PlainItemIndex(a_i);
-                
+                // std::cout<<"a_i="<<a_i<< "/"<< a->size()<<std::endl;
                 for (size_t res_i = 0; res_i < result->size(); res_i++) {
                     std::vector<int> result_idx = result->PlainItemIndex(res_i);
-                    
+                    // std::cout<<"  res_i="<<res_i<<" / "<<result->size()<<std::endl;
                     // 构造对应的 b 索引
                     std::vector<int> b_idx(b->shape().size());
                     b_idx[axis_b] = a_idx[axis_a];
@@ -380,6 +390,7 @@ VarPtr mul(VarPtr a, VarPtr b, int axis_a = -1, int axis_b = -1)
                     if (static_cast<size_t>(axis_a) < a->shape().size()) b_dim_pos--;
                     
                     for (size_t i = 0; i < b->shape().size(); i++) {
+                        // std::cout<<"i="<<i<<", b_dim_pos="<<b_dim_pos<<std::endl;
                         if (i != static_cast<size_t>(axis_b)) {
                             if (b_dim_pos < result_idx.size()) {
                                 b_idx[i] = result_idx[b_dim_pos++];
@@ -391,6 +402,7 @@ VarPtr mul(VarPtr a, VarPtr b, int axis_a = -1, int axis_b = -1)
                     bool match = true;
                     size_t a_dim_pos = 0;
                     for (size_t i = 0; i < a->shape().size(); i++) {
+                        // std::cout<<"i="<<i<< "/"<< a->shape().size()<<", a_dim_pos="<<a_dim_pos<<std::endl;
                         if (i != static_cast<size_t>(axis_a)) {
                             if (a_dim_pos < result_idx.size() && a_idx[i] != result_idx[a_dim_pos]) {
                                 match = false;
@@ -406,11 +418,13 @@ VarPtr mul(VarPtr a, VarPtr b, int axis_a = -1, int axis_b = -1)
                     }
                 }
             }
+            // std::cout<<"Gradient for "<< a->name <<" computed in mul"<<std::endl;
             link_a ->updated = true;
             a->accumulate_gradient(grad_a);
         }
         
         if (b->has_grad()) {
+            // std::cout<<"Computing gradient for b in mul"<<std::endl;
             std::vector<double> grad_b(b->size(), 0.0);
             // 类似地计算 b 的梯度
             for (size_t b_i = 0; b_i < b->size(); b_i++) {
@@ -640,6 +654,7 @@ VarPtr relu(VarPtr a)
     auto link_a = add_link(result, a);
     auto grad_fn = [link_a, a](const std::vector<double> &grad_output)
     {
+        // std::cout<<"ReLU grad_fn called"<<std::endl;
         if (a->has_grad())
         {
             std::vector<double> grad_a(a->size());
@@ -745,6 +760,7 @@ VarPtr mse_loss(VarPtr predictions, VarPtr targets)
     }
 
     // 计算 MSE = mean((predictions - targets)^2)
+    // std::cout << "Calculating MSE Loss" << std::endl;
     auto diff = sub(predictions, targets);
     auto squared_diff = mul(diff, diff);
     return mean(squared_diff);
@@ -892,7 +908,7 @@ VarPtr slice(VarPtr input, const std::vector<int>& indices) {
     auto grad_fn = [link, input, result, indices, input_shape, output_shape,
                     is_slice_dim, fixed_indices, output_size]
                    (const std::vector<double>& grad_output) {
-        
+        // std::cout<<"Slice grad_fn called."<<std::endl;
         if (input->has_grad()) {
             std::vector<double> input_grad(input->size(), 0.0);
             
@@ -967,6 +983,7 @@ VarPtr conv2d(VarPtr a, VarPtr b){
     {
         if (a->has_grad())
         {
+            // std::cout<<"Computing gradient for "<< a->name<<" in conv2d"<<std::endl;
             std::vector<double> grad_a(a->size(), 0.0);
             for (size_t i = 0; i < out_rows; ++i)
             {
@@ -986,6 +1003,7 @@ VarPtr conv2d(VarPtr a, VarPtr b){
         }
         if (b->has_grad())
         {
+            // std::cout<<"Computing gradient for "<< b->name<<" in conv2d"<<std::endl;
             std::vector<double> grad_b(b->size(), 0.0);
             for (size_t i = 0; i < out_rows; ++i)
             {

@@ -59,7 +59,8 @@ private:
     std::vector<Edge*> children_;
     std::vector<Edge*> parents_;
     std::vector<size_t> shape_;
-public:
+    public:
+    std::string name;
     bool has_grad() const { return type_ == parameter || type_ == intermediate; }
     /**
      * 构造函数
@@ -70,6 +71,7 @@ public:
     explicit Variable(double value, Nodetype type, const std::vector<size_t> &shape = {})
         : data_({value}), type_(type), shape_(shape)
     {
+        name = "Var@" + std::to_string(reinterpret_cast<uintptr_t>(this));
         if (type_ == parameter || type_ == intermediate)
         {
             grad_ = std::vector<double>(1, 0.0);
@@ -91,6 +93,7 @@ public:
     explicit Variable(const std::vector<double> &data, Nodetype type, const std::vector<size_t> &shape = {})
         : data_(data), type_(type), shape_(shape)
     {
+        name = "Var@" + std::to_string(reinterpret_cast<uintptr_t>(this));
         if (has_grad())
         {
             grad_ = std::vector<double>(data.size(), 0.0);
@@ -218,13 +221,19 @@ public:
      */
     void calc(){
         if(type_ != intermediate){
+            return;
             throw std::runtime_error("Only intermediate nodes can be calculated");
         }
         for(auto & edge: children_){
-            edge->child->calc();
+            if(!edge->child->updated()){
+                edge->child->calc();
+            }
         }
-        if(this->forward_fn_)
+        if(this->forward_fn_){
+            updated_ = true;
             this->forward_fn_();
+
+        }
     }
     bool updated() const { return updated_; }
     // 累积梯度（不立即传播）
@@ -252,7 +261,6 @@ public:
         if (all_gradients_received) {
             // 将累积的梯度复制到正式的梯度中
             grad_ = accumulated_grad_;
-            updated_ = true;
             // 现在可以安全地向子节点传播梯度
             if (grad_fn_) {
                 grad_fn_(grad_);
@@ -276,7 +284,6 @@ public:
             }
             accumulated_grad_[0] = 1.0;
             grad_ = accumulated_grad_;
-            updated_ = true;
             // 如果有梯度函数，继续反向传播
             if (grad_fn_)
             {
@@ -317,7 +324,7 @@ public:
         {
             edge->updated = false;
             if (edge->child != nullptr)
-            edge->child->zero_grad_recursive();
+                edge->child->zero_grad_recursive();
         }
     }
     /**

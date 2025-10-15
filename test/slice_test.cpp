@@ -15,10 +15,14 @@ std::vector<double> vec_r(size_t size){
     return data;
 }
 int main(){
-    auto a = make_var(vec(4), {4});
-    auto W = make_var(vec(4 * 2), {4, 2});
+    auto a =  make_input(vec(4), {4});
+    auto W = make_input(vec(4 * 2), {4, 2});
     auto c = mul(W,a,0,0);
-    auto W0 = make_var(vec_r(4*2), {4, 2});
+    auto W0 = make_param(vec_r(4*2), {4, 2});
+    for(int i = 0;i<2;i++){
+        auto s = slice(W0, {-1, i});
+        c = c + s;
+    }
     auto e = sum(mul_elementwise(c,c));
     for(int i=0; i<30; i++){
         e->zero_grad_recursive();

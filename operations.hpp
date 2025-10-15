@@ -6,9 +6,20 @@
 // get broadcasted index
 #include <assert.h>
 Edge* add_link(VarPtr parent, VarPtr child, bool updated=false){
-    auto e = new Edge(parent, child, updated);
-    parent->add_child(e);
-    child->add_parent(e);
+    VarPtr real_parent, real_child;
+    if(parent->type() == ref){
+        real_parent = parent->ref;
+    }else{
+        real_parent = parent;
+    }
+    if(child->type() == ref){
+        real_child = child->ref;
+    }else{
+        real_child = child;
+    }
+    auto e = new Edge(real_parent, real_child, updated);
+    real_parent->add_child(e);
+    real_child->add_parent(e);
     return e;
 }
 std::vector<int> get_broadcast_idx(const std::vector<int>& result_idx, const std::vector<size_t>& var_shape) {
@@ -52,6 +63,7 @@ VarPtr add(VarPtr a, VarPtr b)
     auto result = make_var(result_data, result_shape);
     add_link(result, a);
     add_link(result, b);
+    result->operator_name = "add";
     // 执行加法（支持广播）
     auto forward_fn = [result, result_size]() {
         for (size_t i = 0; i < result_size; i++)
@@ -74,7 +86,7 @@ VarPtr add(VarPtr a, VarPtr b)
     // 设置前向函数
     result->set_forward_fn(forward_fn);
 
-    auto grad_fn = [ result, result_size](const std::vector<double> &grad_output)
+    auto grad_fn = [ result, result_size](const DataView &grad_output)
     {
         // std::cout<<"Add grad_fn called."<<std::endl;
         for(auto edge: result->children()){
@@ -122,7 +134,7 @@ VarPtr sub(VarPtr a, VarPtr b){
 
     std::vector<double> result_data(result_size);
     auto result = make_var(result_data, result_shape);
-    
+    result->operator_name = "sub";
     // 添加前向函数
     auto forward_fn = [a, b, result, result_size]() {
         for (size_t i = 0; i < result_size; i++)
@@ -145,7 +157,7 @@ VarPtr sub(VarPtr a, VarPtr b){
 
     auto link_a = add_link(result, a);
     auto link_b = add_link(result, b);
-    auto grad_fn = [link_a, link_b,a,b, result, result_size](const std::vector<double> &grad_output)
+    auto grad_fn = [link_a, link_b,a,b, result, result_size](const DataView &grad_output)
     {
         if (a->has_grad())
         {
@@ -205,7 +217,7 @@ VarPtr mul_elementwise(VarPtr a, VarPtr b) {
     
     std::vector<double> result_data(result_size);
     auto result = make_var(result_data, result_shape);
-    
+    result->operator_name = "mul_elementwise";
     // 添加前向函数
     auto forward_fn = [result, result_size]() {
         for (size_t i = 0; i < result_size; i++) {
@@ -226,7 +238,7 @@ VarPtr mul_elementwise(VarPtr a, VarPtr b) {
     // 设置前向函数
     result->set_forward_fn(forward_fn);
 
-    auto grad_fn = [result, result_size](const std::vector<double> &grad_output) {
+    auto grad_fn = [result, result_size](const DataView &grad_output) {
         auto get_val = [result](Edge* edge, const int i){
             auto node = edge->child;
             if(node == nullptr) return 1.0;
@@ -307,7 +319,7 @@ VarPtr mul(VarPtr a, VarPtr b, int axis_a = -1, int axis_b = -1)
     
     std::vector<double> result_data(result_size, 0.0);
     auto result = make_var(result_data, result_shape);
-    
+    result->operator_name = "mul" + std::to_string(axis_a) + "," + std::to_string(axis_b);
     // 添加前向函数
     auto forward_fn = [a, b, result, result_size, axis_a, axis_b, contract_dim_a]() {
         // 执行张量乘法
@@ -361,7 +373,7 @@ VarPtr mul(VarPtr a, VarPtr b, int axis_a = -1, int axis_b = -1)
     
     auto link_a = add_link(result, a);
     auto link_b = add_link(result, b);
-    auto grad_fn = [link_a, link_b, a, b, result, axis_a, axis_b, contract_dim_a](const std::vector<double> &grad_output) {
+    auto grad_fn = [link_a, link_b, a, b, result, axis_a, axis_b, contract_dim_a](const DataView &grad_output) {
         // std::cout<<"Mul grad_fn called."<<std::endl;
         if (a->has_grad()) {
             // std::cout<<"Computing gradient for "<< a->name <<" in mul"<<std::endl;
@@ -490,7 +502,7 @@ VarPtr pow_elementwise(VarPtr a, double exponent){
     
     std::vector<double> result_data(a->size());
     auto result = make_var(result_data);
-                
+    result->operator_name = "pow_elementwise" + std::to_string(exponent);
     // 添加前向函数
     auto forward_fn = [a, result, exponent]() {
         for (size_t i = 0; i < a->size(); ++i)
@@ -502,7 +514,7 @@ VarPtr pow_elementwise(VarPtr a, double exponent){
     auto link_a = add_link(result, a);
     // 设置前向函数
     result->set_forward_fn(forward_fn);
-    auto grad_fn = [link_a, a, exponent](const std::vector<double> &grad_output)
+    auto grad_fn = [link_a, a, exponent](const DataView &grad_output)
     {
         if (a->has_grad())
         {
@@ -523,13 +535,13 @@ VarPtr pow_elementwise(VarPtr a, double exponent){
 VarPtr sum(VarPtr a)
 {
     auto result = make_var(0.0);
-
+    result->operator_name = "sum";
     // 添加前向函数
     auto forward_fn = [a, result]() {
         double sum_val = 0.0;
-        for (double val : a->data())
+        for (size_t i = 0; i < a->data().size(); ++i)
         {
-            sum_val += val;
+            sum_val += a->data()[i];
         }
         result->Item(0) = sum_val;
     };
@@ -537,7 +549,7 @@ VarPtr sum(VarPtr a)
     // 设置前向函数
     result->set_forward_fn(forward_fn);
     auto link_a = add_link(result, a);
-    auto grad_fn = [link_a, a](const std::vector<double> &grad_output)
+    auto grad_fn = [link_a, a](const DataView &grad_output)
     {
         if (a->has_grad())
         {
@@ -567,6 +579,7 @@ VarPtr sum(std::vector<VarPtr> vars) {
         }
     }
     auto result = make_var(std::vector<double>(expected_size, 0.0), expected_shape);
+    result->operator_name = "sum2";
     // 添加前向函数
     auto forward_fn = [vars, result]() {
         for(int i=0;i<result->size();i++){
@@ -581,11 +594,12 @@ VarPtr sum(std::vector<VarPtr> vars) {
     for (auto& v : vars) {
         add_link(result, v);
     }
-    auto grad_fn =[result](const std::vector<double> &grad_output) {
+    auto grad_fn =[result](const DataView &grad_output) {
+        std::vector<double> grad_a = grad_output.copy();
         for (const auto& e : result->children()) {
             if (e->child->has_grad()) {
                 e->updated = true;
-                e->child->accumulate_gradient(grad_output);
+                e->child->accumulate_gradient(grad_a);
             }
         }
     };
@@ -596,12 +610,13 @@ VarPtr sum(std::vector<VarPtr> vars) {
 VarPtr mean(VarPtr a)
 {
     auto result = make_var(0.0);
-
+    result->operator_name = "mean";
     // 添加前向函数
     auto forward_fn = [a, result]() {
         double sum_val = 0.0;
-        for (double val : a->data())
+        for (int i = 0; i < a->data().size(); ++i)
         {
+            double val = a->data()[i];
             sum_val += val;
         }
         double mean_val = sum_val / a->size();
@@ -612,7 +627,7 @@ VarPtr mean(VarPtr a)
     result->set_forward_fn(forward_fn);
 
     auto link_a = add_link(result, a);
-    auto grad_fn = [link_a, a](const std::vector<double> &grad_output)
+    auto grad_fn = [link_a, a](const DataView &grad_output)
     {
         if (a->has_grad())
         {
@@ -639,7 +654,7 @@ VarPtr relu(VarPtr a)
 {
     std::vector<double> result_data(a->size());
     auto result = make_var(result_data,a->shape());
-
+    result->operator_name = "ReLU";
     // 添加前向函数
     auto forward_fn = [a, result]() {
         for (size_t i = 0; i < a->size(); ++i)
@@ -652,7 +667,7 @@ VarPtr relu(VarPtr a)
     result->set_forward_fn(forward_fn);
 
     auto link_a = add_link(result, a);
-    auto grad_fn = [link_a, a](const std::vector<double> &grad_output)
+    auto grad_fn = [link_a, a](const DataView &grad_output)
     {
         // std::cout<<"ReLU grad_fn called"<<std::endl;
         if (a->has_grad())
@@ -678,7 +693,7 @@ VarPtr sigmoid(VarPtr a)
 {
     std::vector<double> result_data(a->size());
     auto result = make_var(result_data,a->shape());
-
+    result->operator_name = "Sigmoid";
     // 添加前向函数
     auto forward_fn = [a, result]() {
         for (size_t i = 0; i < a->size(); ++i)
@@ -690,7 +705,7 @@ VarPtr sigmoid(VarPtr a)
     // 设置前向函数
     result->set_forward_fn(forward_fn);
     auto link_a = add_link(result, a);
-    auto grad_fn = [link_a, a, result](const std::vector<double> &grad_output)
+    auto grad_fn = [link_a, a, result](const DataView &grad_output)
     {
         if (a->has_grad())
         {
@@ -715,7 +730,7 @@ VarPtr tanh_activation(VarPtr a)
 {
     std::vector<double> result_data(a->size());
     auto result = make_var(result_data,a->shape());
-
+    result->operator_name = "Tanh";
     // 添加前向函数
     auto forward_fn = [a, result]() {
         for (size_t i = 0; i < a->size(); ++i)
@@ -727,7 +742,7 @@ VarPtr tanh_activation(VarPtr a)
     // 设置前向函数
     result->set_forward_fn(forward_fn);
     auto link_a = add_link(result, a);
-    auto grad_fn = [link_a, a, result](const std::vector<double> &grad_output)
+    auto grad_fn = [link_a, a, result](const DataView &grad_output)
     {
         if (a->has_grad())
         {
@@ -776,7 +791,7 @@ VarPtr binary_cross_entropy_loss(VarPtr predictions, VarPtr targets)
 
     std::vector<double> loss_data(predictions->size());
     auto result = make_var(loss_data);
-
+    result->operator_name = "BCE";
     // 添加前向函数
     auto forward_fn = [predictions, targets, result]() {
         for (size_t i = 0; i < predictions->size(); ++i)
@@ -794,7 +809,7 @@ VarPtr binary_cross_entropy_loss(VarPtr predictions, VarPtr targets)
     result->set_forward_fn(forward_fn);
     auto link_pred = add_link(result, predictions);
     auto link_tgt = add_link(result, targets);
-    auto grad_fn = [link_pred, link_tgt, predictions, targets](const std::vector<double> &grad_output)
+    auto grad_fn = [link_pred, link_tgt, predictions, targets](const DataView &grad_output)
     {
         if (predictions->has_grad())
         {
@@ -867,82 +882,93 @@ VarPtr slice(VarPtr input, const std::vector<int>& indices) {
     // 创建输出张量
     std::vector<double> output_data(output_size);
     auto result = make_var(output_data, output_shape);
+    result->operator_name = "slice_";
+    for(auto it = indices.begin(); it != indices.end(); ++it){
+        result->operator_name += std::to_string(*it);
+        if(it + 1 != indices.end()){
+            result->operator_name += ",";
+        }
+    }
+    std::vector<double&> data_refs;
+    std::vector<double&> grad_refs;
+    std::vector<double&> accumulate_refs;
+    for (size_t out_idx = 0; out_idx < output_size; out_idx++) {
+        // 将输出的平坦索引转换为多维索引
+        std::vector<int> output_multi_idx = result->PlainItemIndex(out_idx);
+        
+        // 构造输入张量的索引
+        std::vector<int> input_multi_idx(input_shape.size());
+        size_t output_dim_counter = 0;
+        
+        for (size_t i = 0; i < input_shape.size(); i++) {
+            if (is_slice_dim[i]) {
+                // 这个维度被切片，使用输出索引
+                if (output_multi_idx.size() == 1 && output_shape.size() > 1) {
+                    // 处理标量输出的特殊情况
+                    input_multi_idx[i] = 0;
+                } else if (output_dim_counter < output_multi_idx.size()) {
+                    input_multi_idx[i] = output_multi_idx[output_dim_counter];
+                    output_dim_counter++;
+                }
+            } else {
+                // 这个维度被固定，使用固定索引
+                input_multi_idx[i] = fixed_indices[i];
+            }
+        }
+        
+        // 从输入张量获取值并设置到输出
+        data_refs.push_back(input->Item(input_multi_idx));
+        grad_refs.push_back(input->GradItem(input_multi_idx));
+    }
+    result = make_ref(input, data_refs, grad_refs, output_shape);
     
     // 前向传播函数
-    auto forward_fn = [input, result, indices, input_shape, output_shape, 
-                       is_slice_dim, fixed_indices, output_size]() {
-        
-        for (size_t out_idx = 0; out_idx < output_size; out_idx++) {
-            // 将输出的平坦索引转换为多维索引
-            std::vector<int> output_multi_idx = result->PlainItemIndex(out_idx);
-            
-            // 构造输入张量的索引
-            std::vector<int> input_multi_idx(input_shape.size());
-            size_t output_dim_counter = 0;
-            
-            for (size_t i = 0; i < input_shape.size(); i++) {
-                if (is_slice_dim[i]) {
-                    // 这个维度被切片，使用输出索引
-                    if (output_multi_idx.size() == 1 && output_shape.size() > 1) {
-                        // 处理标量输出的特殊情况
-                        input_multi_idx[i] = 0;
-                    } else if (output_dim_counter < output_multi_idx.size()) {
-                        input_multi_idx[i] = output_multi_idx[output_dim_counter];
-                        output_dim_counter++;
-                    }
-                } else {
-                    // 这个维度被固定，使用固定索引
-                    input_multi_idx[i] = fixed_indices[i];
-                }
-            }
-            
-            // 从输入张量获取值并设置到输出
-            double value = input->Item(input_multi_idx);
-            result->Item(out_idx) = value;
-        }
-    };
+    // auto forward_fn = [input, result, indices, input_shape, output_shape, 
+    //                    is_slice_dim, fixed_indices, output_size]() {
+
+    // };
     
-    result->set_forward_fn(forward_fn);
+    // result->set_forward_fn(forward_fn);
     auto link = add_link(result, input);   
     // 反向传播函数
-    auto grad_fn = [link, input, result, indices, input_shape, output_shape,
-                    is_slice_dim, fixed_indices, output_size]
-                   (const std::vector<double>& grad_output) {
-        // std::cout<<"Slice grad_fn called."<<std::endl;
-        if (input->has_grad()) {
-            std::vector<double> input_grad(input->size(), 0.0);
+    // auto grad_fn = [link, input, result, indices, input_shape, output_shape,
+    //                 is_slice_dim, fixed_indices, output_size]
+    //                (const DataView& grad_output) {
+    //     // std::cout<<"Slice grad_fn called."<<std::endl;
+    //     if (input->has_grad()) {
+    //         std::vector<double> input_grad(input->size(), 0.0);
             
-            for (size_t out_idx = 0; out_idx < output_size; out_idx++) {
-                // 将输出的平坦索引转换为多维索引
-                std::vector<int> output_multi_idx = result->PlainItemIndex(out_idx);
+    //         for (size_t out_idx = 0; out_idx < output_size; out_idx++) {
+    //             // 将输出的平坦索引转换为多维索引
+    //             std::vector<int> output_multi_idx = result->PlainItemIndex(out_idx);
                 
-                // 构造输入张量的索引（与前向传播相同的逻辑）
-                std::vector<int> input_multi_idx(input_shape.size());
-                size_t output_dim_counter = 0;
+    //             // 构造输入张量的索引（与前向传播相同的逻辑）
+    //             std::vector<int> input_multi_idx(input_shape.size());
+    //             size_t output_dim_counter = 0;
                 
-                for (size_t i = 0; i < input_shape.size(); i++) {
-                    if (is_slice_dim[i]) {
-                        if (output_multi_idx.size() == 1 && output_shape.size() > 1) {
-                            input_multi_idx[i] = 0;
-                        } else if (output_dim_counter < output_multi_idx.size()) {
-                            input_multi_idx[i] = output_multi_idx[output_dim_counter];
-                            output_dim_counter++;
-                        }
-                    } else {
-                        input_multi_idx[i] = fixed_indices[i];
-                    }
-                }
+    //             for (size_t i = 0; i < input_shape.size(); i++) {
+    //                 if (is_slice_dim[i]) {
+    //                     if (output_multi_idx.size() == 1 && output_shape.size() > 1) {
+    //                         input_multi_idx[i] = 0;
+    //                     } else if (output_dim_counter < output_multi_idx.size()) {
+    //                         input_multi_idx[i] = output_multi_idx[output_dim_counter];
+    //                         output_dim_counter++;
+    //                     }
+    //                 } else {
+    //                     input_multi_idx[i] = fixed_indices[i];
+    //                 }
+    //             }
                 
-                // 将梯度累加到对应的输入位置
-                size_t input_flat_idx = input->ItemIndex(input_multi_idx);
-                input_grad[input_flat_idx] += grad_output[out_idx];
-            }
-            link->updated = true;    
-            input->accumulate_gradient(input_grad);
-        }
-    };
+    //             // 将梯度累加到对应的输入位置
+    //             size_t input_flat_idx = input->ItemIndex(input_multi_idx);
+    //             input_grad[input_flat_idx] += grad_output[out_idx];
+    //         }
+    //         link->updated = true;    
+    //         input->accumulate_gradient(input_grad);
+    //     }
+    // };
     
-    result->set_grad_fn(grad_fn);
+    // result->set_grad_fn(grad_fn);
     return result;
 }
 
@@ -957,6 +983,7 @@ VarPtr conv2d(VarPtr a, VarPtr b){
     std::vector<size_t> result_shape = {out_rows, out_cols};
     std::vector<double> result_data(out_rows * out_cols, 0.0);
     auto result = make_var(result_data, result_shape);
+    result->operator_name = "conv2d";
     // 添加前向函数
     auto forward_fn = [a, b, result, out_rows, out_cols]() {
         for (size_t i = 0; i < out_rows; ++i)
@@ -979,7 +1006,7 @@ VarPtr conv2d(VarPtr a, VarPtr b){
     result->set_forward_fn(forward_fn);
     auto link_a = add_link(result, a);
     auto link_b = add_link(result, b);
-    auto grad_fn = [link_a, link_b, a, b, result, out_rows, out_cols](const std::vector<double> &grad_output)
+    auto grad_fn = [link_a, link_b, a, b, result, out_rows, out_cols](const DataView &grad_output)
     {
         if (a->has_grad())
         {
@@ -1039,6 +1066,7 @@ VarPtr MaxPooling(VarPtr a, size_t filter_size=2){
     std::vector<size_t> result_shape = {out_rows, out_cols};
     std::vector<double> result_data(out_rows * out_cols, 0.0);
     auto result = make_var(result_data, result_shape);
+    result->operator_name = "MaxPooling_" + std::to_string(filter_size);
     // 添加前向函数
     auto forward_fn = [a, result, out_rows, out_cols, stride, filter_size]() {
         for (size_t i = 0; i < out_rows; ++i)
@@ -1068,7 +1096,7 @@ VarPtr MaxPooling(VarPtr a, size_t filter_size=2){
     // 设置前向函数
     result->set_forward_fn(forward_fn);
     auto link_a = add_link(result, a);
-    auto grad_fn = [link_a, a, result, out_rows, out_cols, filter_size, stride](const std::vector<double> &grad_output)
+    auto grad_fn = [link_a, a, result, out_rows, out_cols, filter_size, stride](const DataView &grad_output)
     {
         if (a->has_grad())
         {
@@ -1117,6 +1145,7 @@ VarPtr stack(std::vector<VarPtr> vars){
     size_t result_size = num_vars * var_size;
     std::vector<double> result_data(result_size, 0.0);
     auto result = make_var(result_data, result_shape);
+    result->operator_name = "stack";
     // 添加前向函数
     auto forward_fn = [vars, result, num_vars, var_size]() {
         for(size_t i = 0; i < num_vars; ++i){
@@ -1127,7 +1156,7 @@ VarPtr stack(std::vector<VarPtr> vars){
     };
     // 设置前向函数
     result->set_forward_fn(forward_fn);
-    auto grad_fn = [vars, result, num_vars, var_size](const std::vector<double> &grad_output)
+    auto grad_fn = [vars, result, num_vars, var_size](const DataView &grad_output)
     {
         for(int i=0; i<num_vars; ++i){
             auto edge = result->children()[i];

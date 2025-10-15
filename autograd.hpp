@@ -26,7 +26,8 @@ using string = std::string;
 enum Nodetype {
     intermediate,
     parameter,
-    input
+    input,
+    reference
 };
 struct Edge {
     VarPtr parent;
@@ -103,7 +104,13 @@ public:
     };
 
     DataView() : references_(false) {}
-    DataView(std::vector<double*>& data) : references_(true) {
+    // DataView(std::vector<double&>& data) : references_(true) {
+    //     for(auto val: data){
+    //         dataview_.push_back(&val);
+    //     }
+    //     // dataview_ = data;
+    // }
+    DataView(std::vector<double*> &data): references_(true) {
         dataview_ = data;
     }
     DataView(std::vector<double>& data, bool ref=false): references_(ref) {
@@ -116,6 +123,9 @@ public:
         }
     }
     DataView(const std::vector<double>& data, bool ref=false): references_(ref) {
+        if(ref == true){
+            throw std::runtime_error("Cannot create reference DataView from const data");
+        }
         // In const mode, always copy
         data_ = data;
     }
@@ -131,7 +141,7 @@ public:
     inline double& operator[](size_t idx) { return references_ ? *dataview_[idx] : data_[idx]; }
     inline double operator[](size_t idx) const { return references_ ? *dataview_[idx] : data_[idx]; }
     inline bool isref() const { return references_; }
-    const std::vector<double>& copy() const{
+    const std::vector<double> copy() const{
         std::vector<double> new_data;
         if(references_){
             for(auto ptr: dataview_){
@@ -159,6 +169,7 @@ private:
     // std::vector<double> grad_;
     DataView grad_;
     Nodetype type_;
+    
     std::function<void(const DataView&)> grad_fn_;
     // std::function<void(const std::vector<double> &)> grad_fn_;
     std::function<void()> forward_fn_; 
@@ -166,12 +177,48 @@ private:
     std::vector<Edge*> parents_;
     std::vector<size_t> shape_;
     public:
+    std::vector<VarPtr> ref ; // for reference mode
     std::string name;
     std::string operator_name;
-    bool has_grad() const { return type_ == parameter || type_ == intermediate; }
+    bool has_grad() const { 
+        if(type_ == parameter || type_ == intermediate){
+            return true;
+        }else if (type_== reference){
+            return ref[0]->has_grad(); // depend on referenced ptr
+        }else{
+            return false;
+        }
+        // return type_ == parameter || type_ == intermediate; 
+    }
     /**
      * 构造函数
      * @param data 数值数据
+     * @param type 节点类型
+     * @param shape 张量形状（可选）
+     */
+    explicit Variable() = default;
+    static VarPtr Ref_Variable(std::vector<VarPtr> original, std::vector<double*> &data,std::vector<double*> &grad, const std::vector<size_t> &shape = {}){
+        auto ret = std::make_shared<Variable>(original, data,grad, reference, shape);
+        return ret;
+    }
+    explicit Variable(std::vector<VarPtr> original, std::vector<double*> &data,std::vector<double*> &grad, Nodetype type=reference, const std::vector<size_t> &shape = {})
+        : ref(original),data_(data), grad_(grad), type_(type), shape_(shape)
+    {
+        if (has_grad())
+        {
+            if(grad_.size() != data_.size()){
+                throw std::runtime_error("Gradient size does not match data size in reference mode");
+            }
+        }
+        if (shape_.empty())
+        {
+            shape_ = {data_.size()};
+        }
+        check_validity();
+    }
+     /**
+     * 标量构造函数
+     * @param value 数值
      * @param type 节点类型
      * @param shape 张量形状（可选）
      */
@@ -225,6 +272,16 @@ private:
         if (total != data_.size())
         {
             throw std::runtime_error("Data size does not match shape");
+        }
+        if(type() == reference ){
+            if(ref.empty())
+                throw std::runtime_error("Reference variable must have at least one referenced variable");
+            bool hasgrad = ref[0]->has_grad();
+            for(auto & r: ref){
+                if(r->has_grad() != hasgrad){
+                    throw std::runtime_error("All referenced variables must have the same grad requirement");
+                }
+            }
         }
     }
     // check if it is some simple shapes like scalar, vector and matrix
@@ -345,13 +402,16 @@ private:
     }
     bool updated() const { return updated_; }
     // 累积梯度（不立即传播）
-    void accumulate_gradient(const std::vector<double>& grad_input) {
+    void accumulate_gradient(const std::vector<double>& grad_input,bool accumulate = true) {
         if (!has_grad()) return;
 
         // 累积梯度
-        for (size_t i = 0; i < grad_.size() && i < grad_input.size(); ++i) {
-            grad_[i] += grad_input[i];
+        if(accumulate){
+            for (size_t i = 0; i < grad_.size() && i < grad_input.size(); ++i) {
+                grad_[i] += grad_input[i];
+            }
         }
+
 
         // 检查是否所有父节点都已发送梯度
         bool all_gradients_received = true;
@@ -364,12 +424,8 @@ private:
                 }
             }
         }
-
         // 如果所有梯度都已接收，执行反向传播
         if (all_gradients_received) {
-            // 将累积的梯度复制到正式的梯度中
-            // grad_ = accumulated_grad_;
-            // 现在可以安全地向子节点传播梯度
             if (grad_fn_) {
                 grad_fn_(grad_);
             }
@@ -453,6 +509,9 @@ private:
             case input:
                 os << "input( ";
                 break;
+            case reference:
+                os << "ref( ";
+                break;
             default:
                 throw std::runtime_error("Unknown variable type");
         }
@@ -530,6 +589,18 @@ private:
     // }
 
     // 通过多维索引获取元素
+    double* ItemAddr(const std::vector<int> &idx)
+    {
+        return &data_[ItemIndex(idx)];
+    }
+    double* ItemAddr(size_t flat_index)
+    {
+        if (flat_index >= size())
+        {
+            throw std::runtime_error("Flat index out of bounds");
+        }
+        return &data_[flat_index];
+    }
     double& Item(const std::vector<int> &idx)
     {
         return data_[ItemIndex(idx)];
@@ -541,6 +612,26 @@ private:
             throw std::runtime_error("Flat index out of bounds");
         }
         return data_[flat_index];
+    }
+    double* GradItemAddr(const std::vector<int> &idx)
+    {
+        if (!has_grad())
+        {
+            throw std::runtime_error("This variable does not require gradient");
+        }
+        return &grad_[ItemIndex(idx)];
+    }
+    double* GradItemAddr(size_t flat_index)
+    {
+        if (!has_grad())
+        {
+            throw std::runtime_error("This variable does not require gradient");
+        }
+        if (flat_index >= size())
+        {
+            throw std::runtime_error("Flat index out of bounds");
+        }
+        return &grad_[flat_index];
     }
     // 通过多维索引获取梯度
     double& GradItem(const std::vector<int> &idx)
@@ -571,6 +662,7 @@ private:
 static int var_counter = 0;
 static int param_counter = 0;
 static int input_counter = 0;
+static int ref_counter = 0;
 VarPtr make_var(double value)
 {
     VarPtr a = std::make_shared<Variable>(value, intermediate);
@@ -578,7 +670,7 @@ VarPtr make_var(double value)
     return a;
 }
 
-VarPtr make_var(const std::vector<double> &data, const std::vector<size_t> &shape = {})
+VarPtr make_var(std::vector<double> data, const std::vector<size_t> &shape = {})
 {
     VarPtr a = std::make_shared<Variable>(data, intermediate, shape);
     a->name = "var" + std::to_string(var_counter++);
@@ -586,17 +678,30 @@ VarPtr make_var(const std::vector<double> &data, const std::vector<size_t> &shap
 }
 
 
-VarPtr make_ref(VarPtr var,std::vector<double&> &data,std::vector<double&> grad, const std::vector<size_t> &shape = {})
+VarPtr make_ref(VarPtr var,std::vector<double*> &data,std::vector<double*> grad, const std::vector<size_t> &shape = {})
 {
-    auto a = Variable(data,grad, ref, shape);
+    auto a = Variable::Ref_Variable({var}, data, grad, shape);
+    a->name = "ref_" + var->name + "_" + std::to_string(ref_counter++);
+    return a;
 }
+VarPtr make_ref(std::vector<VarPtr> vars,std::vector<double*> &data,std::vector<double*> grad, const std::vector<size_t> &shape = {})
+{
+    auto a = Variable::Ref_Variable(vars, data, grad, shape);
+    a->name = "ref_multi_";
+    for(auto var: vars){
+        a->name += var->name + "_";
+    }
+    a->name += std::to_string(ref_counter++);
+    return a;
+}
+
 VarPtr make_param(double value, const std::vector<size_t> &shape = {})
 {
     VarPtr a = std::make_shared<Variable>(value, parameter, shape);
     a->name = "param" + std::to_string(param_counter++);
     return a;
 }
-VarPtr make_param(const std::vector<double> &data, const std::vector<size_t> &shape = {})
+VarPtr make_param( std::vector<double> data, const std::vector<size_t> &shape = {})
 {
     VarPtr a = std::make_shared<Variable>(data, parameter, shape);
     a->name = "param" + std::to_string(param_counter++);
@@ -608,7 +713,7 @@ VarPtr make_input(double value, const std::vector<size_t> &shape = {})
     a->name = "input" + std::to_string(input_counter++);
     return a;
 }
-VarPtr make_input(const std::vector<double> &data, const std::vector<size_t> &shape = {})
+VarPtr make_input( std::vector<double> data, const std::vector<size_t> &shape = {})
 {
     VarPtr a = std::make_shared<Variable>(data, input, shape);
     a->name = "input" + std::to_string(input_counter++);
@@ -629,13 +734,16 @@ class ComputationGraph {
     std::vector<VarPtr> input_nodes;
     std::vector<VarPtr> parameter_nodes;
     std::vector<VarPtr> intermediate_nodes;
+    std::vector<VarPtr> reference_nodes;
     std::vector<VarPtr> output_nodes; // only 1 output node in most cases
     ComputationGraph() = default;
     ComputationGraph(std::vector<VarPtr> inputs,
                      std::vector<VarPtr> parameters,
                      std::vector<VarPtr> intermediates,
+                     std::vector<VarPtr> references,
                      std::vector<VarPtr> outputs)
         : input_nodes(std::move(inputs)),
+            reference_nodes(std::move(references)),
           parameter_nodes(std::move(parameters)),
           intermediate_nodes(std::move(intermediates)),
           output_nodes(std::move(outputs)) {}
@@ -660,6 +768,9 @@ class ComputationGraph {
                     break;
                 case intermediate:
                     graph.intermediate_nodes.push_back(current);
+                    break;
+                case reference:
+                    graph.reference_nodes.push_back(current);
                     break;
                 default:
                     throw std::runtime_error("Unknown node type in computation graph");

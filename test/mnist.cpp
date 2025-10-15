@@ -7,6 +7,17 @@
 #include <string>
 #include <random>
 #include <algorithm>
+#include <signal.h>
+
+ComputationGraph* pgraph = nullptr; // Global pointer to the computation graph
+void signal_handler(int signal){
+    if(signal == SIGINT){
+        std::cout << "\nTraining interrupted by user." << std::endl;
+        pgraph->SaveArch("mnist_model_arch_interrupt.txt");
+        pgraph->SaveParams("mnist_model_params_interrupt.txt");
+        exit(0);
+    }
+}
 
 class MNISTDataset {
 private:
@@ -65,7 +76,7 @@ public:
     }
 };
 
-int main() {
+int main(int argc, char* argv[]) {
     std::vector<bool> results;
     std::cout << "=== MNIST CNN Training in C++ ===" << std::endl;
     
@@ -152,9 +163,19 @@ int main() {
     auto layer1 = relu(add(mul(W1, flattened, 0, 0), b1));
     auto layer2 = add(mul(W2, layer1, 0, 0), b2);
     auto loss = mse_loss(layer2, label);
-    ComputationGraph graph = ComputationGraph::BuildFromOutput(loss);
-    graph.SaveArch("out/mnist_model_arch.txt");
-    exit(0);
+    auto graph = ComputationGraph::BuildFromOutput(loss);
+    pgraph = &graph; // 设置全局指针
+    signal(SIGINT, signal_handler); // 注册信号处理函数
+    
+    if(argc == 2 && std::string(argv[1]) == "resume"){
+        // pgraph->LoadArch("mnist_model_arch_interrupt.txt");
+        pgraph->LoadParams("mnist_model_params_interrupt.txt");
+        std::cout << "Loaded model from interrupt files." << std::endl;
+    }  
+    // pgraph->LoadParams("mnist_model_params_interrupt.txt");
+    // ComputationGraph graph = ComputationGraph::BuildFromOutput(loss);
+    // graph.SaveArch("mnist_model_arch.txt");
+    // exit(0);
     // 收集所有参数
     std::vector<VarPtr> params = {kernel_1, kernel_2, W1, b1, W2, b2};
     size_t total_params = 0;

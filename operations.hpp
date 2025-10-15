@@ -6,20 +6,15 @@
 // get broadcasted index
 #include <assert.h>
 Edge* add_link(VarPtr parent, VarPtr child, bool updated=false){
-    VarPtr real_parent, real_child;
-    if(parent->type() == ref){
-        real_parent = parent->ref;
-    }else{
-        real_parent = parent;
-    }
-    if(child->type() == ref){
-        real_child = child->ref;
-    }else{
-        real_child = child;
-    }
-    auto e = new Edge(real_parent, real_child, updated);
-    real_parent->add_child(e);
-    real_child->add_parent(e);
+    // VarPtr real_parent, real_child;
+    // while(parent->type() == Nodetype::ref)
+    //     parent = parent->ref;
+    // while(child->type() == Nodetype::ref)
+    //     child = child->ref;
+
+    auto e = new Edge(parent, child, updated);
+    parent->add_child(e);
+    child->add_parent(e);
     return e;
 }
 std::vector<int> get_broadcast_idx(const std::vector<int>& result_idx, const std::vector<size_t>& var_shape) {
@@ -881,20 +876,14 @@ VarPtr slice(VarPtr input, const std::vector<int>& indices) {
     
     // 创建输出张量
     std::vector<double> output_data(output_size);
-    auto result = make_var(output_data, output_shape);
-    result->operator_name = "slice_";
-    for(auto it = indices.begin(); it != indices.end(); ++it){
-        result->operator_name += std::to_string(*it);
-        if(it + 1 != indices.end()){
-            result->operator_name += ",";
-        }
-    }
-    std::vector<double&> data_refs;
-    std::vector<double&> grad_refs;
-    std::vector<double&> accumulate_refs;
+    // auto result = make_var(output_data, output_shape);
+    
+    std::vector<double*> data_refs;
+    std::vector<double*> grad_refs;
+    auto result_temp = make_var(output_data, output_shape);
     for (size_t out_idx = 0; out_idx < output_size; out_idx++) {
         // 将输出的平坦索引转换为多维索引
-        std::vector<int> output_multi_idx = result->PlainItemIndex(out_idx);
+        std::vector<int> output_multi_idx = result_temp->PlainItemIndex(out_idx);
         
         // 构造输入张量的索引
         std::vector<int> input_multi_idx(input_shape.size());
@@ -917,58 +906,77 @@ VarPtr slice(VarPtr input, const std::vector<int>& indices) {
         }
         
         // 从输入张量获取值并设置到输出
-        data_refs.push_back(input->Item(input_multi_idx));
-        grad_refs.push_back(input->GradItem(input_multi_idx));
+        data_refs.push_back(input->ItemAddr(input_multi_idx));
+        if(input->has_grad()){
+            grad_refs.push_back(input->GradItemAddr(input_multi_idx));
+        }
     }
-    result = make_ref(input, data_refs, grad_refs, output_shape);
-    
+    auto result = make_ref(input, data_refs, grad_refs, output_shape);
+    result->operator_name = "slice_";
+    for(auto it = indices.begin(); it != indices.end(); ++it){
+        result->operator_name += std::to_string(*it);
+        if(it + 1 != indices.end()){
+            result->operator_name += ",";
+        }
+    }
     // 前向传播函数
     // auto forward_fn = [input, result, indices, input_shape, output_shape, 
     //                    is_slice_dim, fixed_indices, output_size]() {
-
+    //                     // do nothing as data_refs already reference input data
     // };
     
-    // result->set_forward_fn(forward_fn);
+    auto forward_fn = []() {
+        // do nothing as data_refs already reference input data
+    };
+    result->set_forward_fn(forward_fn);
     auto link = add_link(result, input);   
+
     // 反向传播函数
-    // auto grad_fn = [link, input, result, indices, input_shape, output_shape,
-    //                 is_slice_dim, fixed_indices, output_size]
-    //                (const DataView& grad_output) {
-    //     // std::cout<<"Slice grad_fn called."<<std::endl;
-    //     if (input->has_grad()) {
-    //         std::vector<double> input_grad(input->size(), 0.0);
+    auto grad_fn = [link, input, result, indices, input_shape, output_shape,
+                    is_slice_dim, fixed_indices, output_size]
+                   (const DataView& grad_output) {
+        // gradient of input has been updated by ref result
+        // no need to accumulate again
+        link->updated = true;
+        input->accumulate_gradient({},false);
+                    // input->accumulate_gradient(grad_output);
+        // do nothing as grad_refs already reference input grad
+
+        // std::cout<<"Slice grad_fn called."<<std::endl;
+        // if (input->has_grad()) {
+        //     std::vector<double> input_grad(input->size(), 0.0);
             
-    //         for (size_t out_idx = 0; out_idx < output_size; out_idx++) {
-    //             // 将输出的平坦索引转换为多维索引
-    //             std::vector<int> output_multi_idx = result->PlainItemIndex(out_idx);
+        //     for (size_t out_idx = 0; out_idx < output_size; out_idx++) {
+        //         // 将输出的平坦索引转换为多维索引
+        //         std::vector<int> output_multi_idx = result->PlainItemIndex(out_idx);
                 
-    //             // 构造输入张量的索引（与前向传播相同的逻辑）
-    //             std::vector<int> input_multi_idx(input_shape.size());
-    //             size_t output_dim_counter = 0;
+        //         // 构造输入张量的索引（与前向传播相同的逻辑）
+        //         std::vector<int> input_multi_idx(input_shape.size());
+        //         size_t output_dim_counter = 0;
                 
-    //             for (size_t i = 0; i < input_shape.size(); i++) {
-    //                 if (is_slice_dim[i]) {
-    //                     if (output_multi_idx.size() == 1 && output_shape.size() > 1) {
-    //                         input_multi_idx[i] = 0;
-    //                     } else if (output_dim_counter < output_multi_idx.size()) {
-    //                         input_multi_idx[i] = output_multi_idx[output_dim_counter];
-    //                         output_dim_counter++;
-    //                     }
-    //                 } else {
-    //                     input_multi_idx[i] = fixed_indices[i];
-    //                 }
-    //             }
+        //         for (size_t i = 0; i < input_shape.size(); i++) {
+        //             if (is_slice_dim[i]) {
+        //                 if (output_multi_idx.size() == 1 && output_shape.size() > 1) {
+        //                     input_multi_idx[i] = 0;
+        //                 } else if (output_dim_counter < output_multi_idx.size()) {
+        //                     input_multi_idx[i] = output_multi_idx[output_dim_counter];
+        //                     output_dim_counter++;
+        //                 }
+        //             } else {
+        //                 input_multi_idx[i] = fixed_indices[i];
+        //             }
+        //         }
                 
-    //             // 将梯度累加到对应的输入位置
-    //             size_t input_flat_idx = input->ItemIndex(input_multi_idx);
-    //             input_grad[input_flat_idx] += grad_output[out_idx];
-    //         }
-    //         link->updated = true;    
-    //         input->accumulate_gradient(input_grad);
-    //     }
-    // };
+        //         // 将梯度累加到对应的输入位置
+        //         size_t input_flat_idx = input->ItemIndex(input_multi_idx);
+        //         input_grad[input_flat_idx] += grad_output[out_idx];
+        //     }
+        //     link->updated = true;    
+        //     input->accumulate_gradient(input_grad);
+        // }
+    };
     
-    // result->set_grad_fn(grad_fn);
+    result->set_grad_fn(grad_fn);
     return result;
 }
 
@@ -1143,33 +1151,45 @@ VarPtr stack(std::vector<VarPtr> vars){
     }
     // result_shape.insert(result_shape.end(), vars[0]->shape().begin(), vars[0]->shape().end());
     size_t result_size = num_vars * var_size;
-    std::vector<double> result_data(result_size, 0.0);
-    auto result = make_var(result_data, result_shape);
+    // std::vector<double> result_data(result_size, 0.0);
+    std::vector<double*> data_refs;
+    std::vector<double*> grad_refs;
+    for(size_t i = 0; i < num_vars; ++i){
+        for(size_t j = 0; j < var_size; ++j){
+            data_refs.push_back(vars[i]->ItemAddr(j));
+            grad_refs.push_back(vars[i]->GradItemAddr(j));
+        }
+    }
+    auto result = make_ref(vars, data_refs,grad_refs,result_shape);
     result->operator_name = "stack";
     // 添加前向函数
     auto forward_fn = [vars, result, num_vars, var_size]() {
-        for(size_t i = 0; i < num_vars; ++i){
-            for(size_t j = 0; j < var_size; ++j){
-                result->Item(i * var_size + j) = vars[i]->data()[j];
-            }
-        }
+        // do nothing as data_refs already reference input data
     };
     // 设置前向函数
     result->set_forward_fn(forward_fn);
     auto grad_fn = [vars, result, num_vars, var_size](const DataView &grad_output)
     {
-        for(int i=0; i<num_vars; ++i){
-            auto edge = result->children()[i];
-            auto node = edge->child;
-            if(node->has_grad()){
-                std::vector<double> grad_var(var_size, 0.0);
-                for(size_t j = 0; j < var_size; ++j){
-                    grad_var[j] = grad_output[i * var_size + j];
-                }
-                edge->updated = true;
-                vars[i]->accumulate_gradient(grad_var);
+        // grad_output has been updated on result already
+        // next propagate to vars
+        for(auto& v: result->children()){
+            if(v->child->has_grad()){
+                v->updated = true;
+                v->child->accumulate_gradient({}, false);
             }
         }
+        // for(int i=0; i<num_vars; ++i){
+        //     auto edge = result->children()[i];
+        //     auto node = edge->child;
+        //     if(node->has_grad()){
+        //         std::vector<double> grad_var(var_size, 0.0);
+        //         for(size_t j = 0; j < var_size; ++j){
+        //             grad_var[j] = grad_output[i * var_size + j];
+        //         }
+        //         edge->updated = true;
+        //         vars[i]->accumulate_gradient(grad_var);
+        //     }
+        // }
     };
     result->set_grad_fn(grad_fn);
     for(const auto& v : vars){

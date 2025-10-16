@@ -53,7 +53,7 @@ int main() {
     std::vector<double> w_real = normal_distribution_vector(n_input * n_output, 2.0, 0.1);
     auto x = make_input(std::vector<double>(n_input,0.0), {n_input});
     auto y = make_input(std::vector<double>(n_output,0.0), {n_output});
-    auto w = make_var(std::vector<double>(n_input * n_output, 0.0) , {n_input, n_output});
+    auto w = make_param(std::vector<double>(n_input * n_output, 0.0) , {n_input, n_output});
     auto yhat = mul(w,x,0,0);
     auto loss = mse_loss(yhat, y);
     double learning_rate = 0.01;
@@ -82,7 +82,7 @@ int main() {
     
     std::cout << "\n训练完成!" << std::endl;
     std::cout << "最终参数: w:";
-    w->print();
+    w->print(std::cout,true);
     std::cout << "真实参数: w_real=[";
     for (size_t i = 0; i < w_real.size(); ++i) {
         std::cout << w_real[i];
@@ -101,7 +101,7 @@ int main() {
     // y->set_data(test_y);
     // loss->forward();
     std::cout<< "yhat: ";
-    yhat->print();
+    yhat->print(std::cout,true);
     std::cout<< "y_real: ";
     for (const auto& val : test_y) {
         std::cout << val << " ";

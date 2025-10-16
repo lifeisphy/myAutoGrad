@@ -385,9 +385,19 @@ private:
      * 前向计算
      */
     void calc(){
-        if(type_ != intermediate){
+        if(type_ != intermediate && type_ != reference){
+            updated_ = true;
             return;
             throw std::runtime_error("Only intermediate nodes can be calculated");
+        }else if (type_ == reference){
+            // for reference node, just calc its referenced nodes
+            for(auto & r: ref){
+                if(!r->updated()){
+                    r->calc();
+                }
+            }
+            updated_ = true;
+            return;
         }
         for(auto & edge: children_){
             if(!edge->child->updated()){
@@ -397,6 +407,15 @@ private:
         if(this->forward_fn_){
             updated_ = true;
             this->forward_fn_();
+            double s=0;
+            for(int i=0; i< data_.size(); i++){
+                s += data_[i];
+            }
+            // if( s > -1e-6 && s < 1e-6){
+            //     std::cout<<"Warning: Forward result is very small: " << s << std::endl;
+            //     std::cout<<"variable: " << name << ", op: " << operator_name << std::endl;
+            //     std::cout<<"shape:"; print_vec(std::cout, shape_); std::cout<<std::endl;
+            // }
 
         }
     }
@@ -407,9 +426,16 @@ private:
 
         // 累积梯度
         if(accumulate){
+            double sum_ = 0;
             for (size_t i = 0; i < grad_.size() && i < grad_input.size(); ++i) {
                 grad_[i] += grad_input[i];
+                sum_ += grad_input[i];
             }
+            // if(sum_ < 1e-6 && sum_ > -1e-6){
+            //     std::cout<<"Warning: Accumulated gradient is very small: " << sum_ << std::endl;
+            //     std::cout<<"variable: " << name << ", op: " << operator_name << std::endl;
+            //     std::cout<<"shape:"; print_vec(std::cout, shape_); std::cout<<std::endl;
+            // }
         }
 
 
@@ -475,10 +501,7 @@ private:
     //         forward_fn_();
     //     }
     // }
-    VarPtr flatten(){
-        this->shape_ = {this->size()};
-        return VarPtr(this);
-    }
+
     void zero_grad_recursive()
     {
         zero_grad();

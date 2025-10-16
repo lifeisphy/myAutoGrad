@@ -13,8 +13,7 @@ ComputationGraph* pgraph = nullptr; // Global pointer to the computation graph
 void signal_handler(int signal){
     if(signal == SIGINT){
         std::cout << "\nTraining interrupted by user." << std::endl;
-        pgraph->SaveArch("mnist_model_arch_interrupt.txt");
-        pgraph->SaveParams("mnist_model_params_interrupt.txt");
+        pgraph->SaveParams("test/mnist_model_params_interrupt.txt");
         exit(0);
     }
 }
@@ -99,7 +98,7 @@ int main(int argc, char* argv[]) {
     
     // 初始化卷积核权重
     std::random_device rd;
-    std::mt19937 gen(rd());
+    std::mt19937 gen(42);  // 固定随机种子以确保结果可重现
     std::normal_distribution<double> normal_dist(0.0, 0.1);
     
     auto init_weights = [&](size_t size) {
@@ -119,7 +118,7 @@ int main(int argc, char* argv[]) {
     for (int i = 0; i < n_kernel; i++) {
         auto kernel_slice = slice(kernel_1, {-1, -1, i});  // 提取第i个卷积核
         auto conv_out = conv2d(x, kernel_slice);
-        auto relu_out = relu(conv_out);
+        auto relu_out = sigmoid(conv_out);
         auto pool_out = MaxPooling(relu_out, 2);
         output_1.push_back(pool_out);
     }
@@ -139,7 +138,7 @@ int main(int argc, char* argv[]) {
         for (int j = 0; j < n_kernel; j++) {
             auto kernel_slice = slice(kernel_2, {-1, -1, j, i});
             auto conv_out = conv2d(slices_1[j], kernel_slice);
-            auto relu_out = relu(conv_out);
+            auto relu_out = sigmoid(conv_out);
             auto pool_out = MaxPooling(relu_out, 2);
             conv_results.push_back(pool_out);
         }
@@ -159,8 +158,8 @@ int main(int argc, char* argv[]) {
     auto b2 = make_param(init_weights(n_output), {n_output});
     std::cout<<"W1 shape: "<< W1->shape()[0] << "x" << W1->shape()[1] <<std::endl;
     std::cout<<"W2 shape: "<< W2->shape()[0] << "x" << W2->shape()[1] <<std::endl;
-    auto flattened = feature_maps_2->flatten();
-    auto layer1 = relu(add(mul(W1, flattened, 0, 0), b1));
+    auto flattened = flatten(feature_maps_2);
+    auto layer1 = sigmoid(add(mul(W1, flattened, 0, 0), b1));
     auto layer2 = add(mul(W2, layer1, 0, 0), b2);
     auto loss = mse_loss(layer2, label);
     auto graph = ComputationGraph::BuildFromOutput(loss);
@@ -169,7 +168,7 @@ int main(int argc, char* argv[]) {
     
     if(argc == 2 && std::string(argv[1]) == "resume"){
         // pgraph->LoadArch("mnist_model_arch_interrupt.txt");
-        pgraph->LoadParams("mnist_model_params_interrupt.txt");
+        pgraph->LoadParams("test/mnist_model_params_interrupt.txt");
         std::cout << "Loaded model from interrupt files." << std::endl;
     }  
     // pgraph->LoadParams("mnist_model_params_interrupt.txt");
@@ -177,9 +176,9 @@ int main(int argc, char* argv[]) {
     // graph.SaveArch("mnist_model_arch.txt");
     // exit(0);
     // 收集所有参数
-    std::vector<VarPtr> params = {kernel_1, kernel_2, W1, b1, W2, b2};
+    // std::vector<VarPtr> params = {kernel_1, kernel_2, W1, b1, W2, b2};
     size_t total_params = 0;
-    for (const auto& param : params) {
+    for (const auto& param : pgraph->parameter_nodes) {
         total_params += param->size();
     }
     std::cout << "Total parameters: " << total_params << std::endl;
@@ -262,7 +261,7 @@ int main(int argc, char* argv[]) {
                 int correct_so_far = std::count(results.begin(), results.end(), true);
                 accuracy_past500 = static_cast<double>(correct_so_far) / results.size() * 100.0;
             }
-
+            print_vec(std::cout,predictions);
             // 打印进度
             std::cout<< "i: " << i << ", loss: " << std::fixed << std::setprecision(6) << current_loss << " prev_pred:" << predicted_class << " real:" << dataset.get_label(i) << " accuracy: " << std::fixed << std::setprecision(2) << (double(correct_predictions) / (i + 1) * 100.0) << "%" << " acc_p50:" << std::setprecision(2) << accuracy_past50 << "%" << " acc_p100:" << std::setprecision(2) << accuracy_past100 << "%" << " acc_p500:" << std::setprecision(2) << accuracy_past500 << "%" << "\r";
             std::cout.flush();
@@ -277,10 +276,10 @@ int main(int argc, char* argv[]) {
             }
             
             // 反向传播
-            loss->backward();
+           loss->backward();
             
             // 参数更新
-            for (auto& param : params) {
+            for (auto& param : pgraph->parameter_nodes) {
                 param->update(learning_rate);
             }
         }
@@ -297,6 +296,7 @@ int main(int argc, char* argv[]) {
     }
     
     std::cout << "Training completed!" << std::endl;
-    
+    pgraph->SaveParams("test/mnist_model_params.txt");
+    std::cout << "Model parameters saved to mnist_model_params.txt" << std::endl;
     return 0;
 }

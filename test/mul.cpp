@@ -1,6 +1,6 @@
 #include "../autograd.hpp"
 #include <iostream>
-
+using namespace std;
 int main(){
     VarPtr a = make_var({1.0, 2.0, 3.0, 4.0,5.0,6.0}, {2,3});
     // VarPtr b = make_var({4.0, 5.0, 6.0, 7.0,8.0,9.0}, true, {3,2});
@@ -10,8 +10,8 @@ int main(){
 
     auto s = sum(d);
     s->backward();
-    d->print();
-    a->print();
-    b->print();
+    d->print(cout,true);
+    a->print(cout,true);
+    b->print(cout,true);
     return 0;
 }

@@ -979,7 +979,40 @@ VarPtr slice(VarPtr input, const std::vector<int>& indices) {
     result->set_grad_fn(grad_fn);
     return result;
 }
+VarPtr flatten(VarPtr input) {
+    // 将多维张量展平成一维张量
+    std::vector<size_t> output_shape = {input->size()};
+    std::vector<double*> data_refs;
+    std::vector<double*> grad_refs;
+    for (size_t i = 0; i < input->size(); i++) {
+        std::vector<int> input_multi_idx = input->PlainItemIndex(i);
+        data_refs.push_back(input->ItemAddr(input_multi_idx));
+        if(input->has_grad()){
+            grad_refs.push_back(input->GradItemAddr(input_multi_idx));
+        }
+    }
+    auto result = make_ref(input, data_refs, grad_refs, output_shape);
+    result->operator_name = "flatten";
+    // 前向传播函数
+    auto forward_fn = []() {
+        // do nothing as data_refs already reference input data
+    };
+    result->set_forward_fn(forward_fn);
+    auto link = add_link(result, input);   
 
+    // 反向传播函数
+    auto grad_fn = [link, input, result, output_shape]
+                   (const DataView& grad_output) {
+        // gradient of input has been updated by ref result
+        // no need to accumulate again
+        link->updated = true;
+        input->accumulate_gradient({},false);
+        // do nothing as grad_refs already reference input grad
+    };
+    
+    result->set_grad_fn(grad_fn);
+    return result;
+}
 // 2D卷积运算
 VarPtr conv2d(VarPtr a, VarPtr b){
     if(!a->is_matrix() || !b->is_matrix())

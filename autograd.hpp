@@ -13,6 +13,19 @@
 #include <fstream>
 #include <map>
 #include <cassert>
+
+// 在 Variable 类定义之前添加宏定义
+#define STRINGIFY(x) #x
+#define TOSTRING(x) STRINGIFY(x)
+
+// 为了支持变量名追踪，添加一个宏来创建带名称的变量
+#define MAKE_VAR_(type, name, ...) \
+    auto name = type(__VA_ARGS__, TOSTRING(name)); \
+
+#define MAKE_INPUT(name, ...) MAKE_VAR_(make_input, name, __VA_ARGS__)
+#define MAKE_PARAM(name, ...) MAKE_VAR_(make_param, name, __VA_ARGS__)
+#define MAKE_REF(name, ...) MAKE_VAR_(make_ref, name, __VA_ARGS__)
+#define MAKE_VAR(name, ...) MAKE_VAR_(make_var, name, __VA_ARGS__)
 // 前向声明
 class Variable;
 class DataView;
@@ -523,39 +536,44 @@ private:
     {
         os << name<<" = ";
         switch(type_){
-            case intermediate:
-                os << "intermediate( ";
-                break;
             case parameter:
                 os << "parameter( ";
+                os << "size=" << size() << ", ";
+                os << "shape=";
+                print_vec(os, shape_); os<<", ";
                 break;
             case input:
                 os << "input( ";
+                os << "size=" << size() << ", ";
+                os << "shape=";
+                print_vec(os, shape_); os<<", ";
+                break;
+            case intermediate:
+                os << operator_name << "(";
+                print_vec(os,children_, "",",","", [](std::ostream& os, Edge* edge){ os << edge->child->name;});
+                os<<", ";
                 break;
             case reference:
-                os << "ref( ";
+                if(!operator_name.empty()){
+                    os<<operator_name<<"(";
+                }else{
+                    os<<"ref(";
+                }
+                print_vec(os, ref, "[",",","]", [](std::ostream& os, VarPtr v){ os << v->name;});
+                os <<", ";
                 break;
             default:
                 throw std::runtime_error("Unknown variable type");
-        }
-        os << "size=" << size() << ", ";
-        os << "shape=";
-        print_vec(os, shape_); os<<", ";
-        if(type_ == intermediate && !operator_name.empty()){
-            os << "op=" << operator_name;
-            print_vec(os,children_, '(',',',')', [](std::ostream& os, Edge* edge){ os << edge->child->name;});
-            os<<", ";
         }
         if(verbose){
             os<< "data=";
             print_vec(os, data_);
             os<<", ";
-        }
-
-        if (has_grad() && verbose)
-        {
-            os << "grad=";
-            print_vec(os, grad_, "[", ",", "]");
+            if (has_grad())
+            {
+                os << "grad=";
+                print_vec(os, grad_, "[", ",", "]");
+            }
         }
         os << ")" << std::endl;
         return os;
@@ -681,65 +699,71 @@ private:
 };
 
 // 工具函数：创建Variable的智能指针
+std::map<std::string, int> counter;
+std::string get_name(const std::string &prefix, const std::string default_name){
+    auto name_pref = prefix.empty()? default_name : prefix;
+    if(counter.find(name_pref) == counter.end()){
+        counter[name_pref] = 1;
+        return name_pref;
+    }else {
+        return name_pref + std::to_string(counter[name_pref]++);
+    }
+}
 
-static int var_counter = 0;
-static int param_counter = 0;
-static int input_counter = 0;
-static int ref_counter = 0;
-VarPtr make_var(double value)
+    // static int var_counter = 0;
+    // static int param_counter = 0;
+    // static int input_counter = 0;
+    // static int ref_counter = 0;
+VarPtr make_var(double value, const std::string& name="")
 {
     VarPtr a = std::make_shared<Variable>(value, intermediate);
-    a->name = "var" + std::to_string(var_counter++);
+    a->name = get_name(name, "var");
     return a;
 }
 
-VarPtr make_var(std::vector<double> data, const std::vector<size_t> &shape = {})
+VarPtr make_var(std::vector<double> data, const std::vector<size_t> &shape = {}, const std::string &name = "")
 {
     VarPtr a = std::make_shared<Variable>(data, intermediate, shape);
-    a->name = "var" + std::to_string(var_counter++);
+    a->name = get_name(name, "var");
     return a;
 }
 
 
-VarPtr make_ref(VarPtr var,std::vector<double*> &data,std::vector<double*> grad, const std::vector<size_t> &shape = {})
+VarPtr make_ref(VarPtr var,std::vector<double*> &data,std::vector<double*> grad, const std::vector<size_t> &shape = {}, const std::string &name = "")
 {
     auto a = Variable::Ref_Variable({var}, data, grad, shape);
-    a->name = "ref_" + var->name + "_" + std::to_string(ref_counter++);
+    a->name = get_name(name, "ref");
     return a;
 }
-VarPtr make_ref(std::vector<VarPtr> vars,std::vector<double*> &data,std::vector<double*> grad, const std::vector<size_t> &shape = {})
+VarPtr make_ref(std::vector<VarPtr> vars,std::vector<double*> &data,std::vector<double*> grad, const std::vector<size_t> &shape = {}, const std::string &name = "")
 {
     auto a = Variable::Ref_Variable(vars, data, grad, shape);
-    a->name = "ref_multi_";
-    for(auto var: vars){
-        a->name += var->name + "_";
-    }
-    a->name += std::to_string(ref_counter++);
+    a->name = get_name(name, "ref");
     return a;
 }
 
-VarPtr make_param(double value, const std::vector<size_t> &shape = {})
+VarPtr make_param(double value, const std::vector<size_t> &shape = {}, const std::string &name = "")
 {
     VarPtr a = std::make_shared<Variable>(value, parameter, shape);
-    a->name = "param" + std::to_string(param_counter++);
+    a->name = get_name(name, "param");
     return a;
 }
-VarPtr make_param( std::vector<double> data, const std::vector<size_t> &shape = {})
+VarPtr make_param( std::vector<double> data, const std::vector<size_t> &shape = {}, const std::string &name = "")
 {
     VarPtr a = std::make_shared<Variable>(data, parameter, shape);
-    a->name = "param" + std::to_string(param_counter++);
+    a->name = get_name(name, "param");
     return a;
 }
-VarPtr make_input(double value, const std::vector<size_t> &shape = {})
+VarPtr make_input(double value, const std::vector<size_t> &shape = {}, const std::string &name = "")
 {
     VarPtr a = std::make_shared<Variable>(value, input, shape);
-    a->name = "input" + std::to_string(input_counter++);
+    a->name = get_name(name, "input");
     return a;
 }
-VarPtr make_input( std::vector<double> data, const std::vector<size_t> &shape = {})
+VarPtr make_input( std::vector<double> data, const std::vector<size_t> &shape = {}, const std::string &name = "")
 {
     VarPtr a = std::make_shared<Variable>(data, input, shape);
-    a->name = "input" + std::to_string(input_counter++);
+    a->name = get_name(name, "input");
     return a;
 }
 
@@ -751,7 +775,41 @@ VarPtr operator*(VarPtr a, VarPtr b) { return mul(a, b); }
 // VarPtr operator/(VarPtr a, VarPtr b) { return div(a, b); }  // div function is commented out
 VarPtr operator^(VarPtr a, double exponent) { return pow_elementwise(a, exponent); }
 
+class AdamOptimizer {
+    double learning_rate_;
+    double beta1_;
+    double beta2_;
+    double epsilon_;
+    std::map<VarPtr, std::pair<std::vector<double>, std::vector<double>>> moments_; // first: m, second: v
+public:
+    AdamOptimizer(double learning_rate=0.001, double beta1=0.9, double beta2=0.999, double epsilon=1e-8)
+        : learning_rate_(learning_rate), beta1_(beta1), beta2_(beta2), epsilon_(epsilon) {}
+    void set_parameter_nodes(std::vector<VarPtr> params) {
+        for (const auto& param : params) {
+            if (param->has_grad()) {
+                moments_[param] = {std::vector<double>(param->size(), 0.0), std::vector<double>(param->size(), 0.0)};
+            }
+        }
+    }
+    void update(VarPtr& var) {
+        if (!var->has_grad()) {
+            throw std::runtime_error("Variable does not have gradients for Adam update");
+        }
 
+        auto it = moments_.find(var);
+        if (it == moments_.end()) {
+            throw std::runtime_error("Variable not found in Adam optimizer moments");
+        }
+        auto& [m, v] = it->second;
+        for (size_t i = 0; i < var->size(); ++i) {
+            m[i] = beta1_ * m[i] + (1 - beta1_) * var->grad()[i];
+            v[i] = beta2_ * v[i] + (1 - beta2_) * var->grad()[i] * var->grad()[i];
+            double m_hat = m[i] / (1 - beta1_);
+            double v_hat = v[i] / (1 - beta2_);
+            var->Item(i) -= learning_rate_ * m_hat / (std::sqrt(v_hat) + epsilon_);
+        }
+    }
+};
 class ComputationGraph {
     public:
     std::vector<VarPtr> input_nodes;
@@ -774,6 +832,7 @@ class ComputationGraph {
         ComputationGraph graph;
         std::vector<VarPtr> stack;
         std::unordered_set<VarPtr> visited;
+        graph.output_nodes.push_back(output_node);
         stack.push_back(output_node);
         while(!stack.empty()){
             VarPtr current = stack.back();
@@ -893,6 +952,39 @@ class ComputationGraph {
         std::vector<VarPtr> sorted = toposort(*this);
         for(auto & node: sorted){
             node->print(ofs,false);
+        }
+    }
+    int epochs = 0;
+    int epoch = 0;
+    int n_samples = 0;
+    int i = 0;
+    void fit(std::function<void(ComputationGraph* pgraph)> load_data, int epochs, int n_samples, double learning_rate, std::function<void(ComputationGraph* pgraph)> print_info_before=nullptr, std::function<void(ComputationGraph* pgraph)> print_info_after=nullptr){
+        auto optimizer = AdamOptimizer(learning_rate);
+        optimizer.set_parameter_nodes(parameter_nodes);
+        this->n_samples = n_samples;
+        this->epochs = epochs;
+        for(int epoch = 0; epoch < epochs; epoch++){
+            this->epoch = epoch;
+            for(int i = 0; i < n_samples; i++){
+                this->i = i;
+                load_data(this);
+                if(output_nodes.empty() || output_nodes.size() != 1){
+                    throw std::runtime_error("No output node or many output nodes in computation graph");
+                }
+                output_nodes[0]->zero_grad_recursive();
+                output_nodes[0]->calc();
+                if(print_info_before){
+                    print_info_before(this);
+                }
+                output_nodes[0]->backward();
+                for(auto & param: parameter_nodes){
+                    optimizer.update(param);
+                    // param->update(learning_rate);
+                }
+                if(print_info_after){
+                    print_info_after(this);
+                }
+            }
         }
     }
 };

@@ -91,7 +91,7 @@ int main(int argc, char* argv[]) {
     const int n_output = 10;
     const int n_kernel = 32;
     const int n_kernel_2 = 48;
-    
+
     // 创建网络变量
     auto x = make_input(std::vector<double>(n_input, 0.0), {n, n});
     auto label = make_input(std::vector<double>(n_output, 0.0), {n_output});
@@ -118,7 +118,7 @@ int main(int argc, char* argv[]) {
     for (int i = 0; i < n_kernel; i++) {
         auto kernel_slice = slice(kernel_1, {-1, -1, i});  // 提取第i个卷积核
         auto conv_out = conv2d(x, kernel_slice);
-        auto relu_out = sigmoid(conv_out);
+        auto relu_out = relu(conv_out);
         auto pool_out = MaxPooling(relu_out, 2);
         output_1.push_back(pool_out);
     }
@@ -138,7 +138,7 @@ int main(int argc, char* argv[]) {
         for (int j = 0; j < n_kernel; j++) {
             auto kernel_slice = slice(kernel_2, {-1, -1, j, i});
             auto conv_out = conv2d(slices_1[j], kernel_slice);
-            auto relu_out = sigmoid(conv_out);
+            auto relu_out = relu(conv_out);
             auto pool_out = MaxPooling(relu_out, 2);
             conv_results.push_back(pool_out);
         }
@@ -159,7 +159,7 @@ int main(int argc, char* argv[]) {
     std::cout<<"W1 shape: "<< W1->shape()[0] << "x" << W1->shape()[1] <<std::endl;
     std::cout<<"W2 shape: "<< W2->shape()[0] << "x" << W2->shape()[1] <<std::endl;
     auto flattened = flatten(feature_maps_2);
-    auto layer1 = sigmoid(add(mul(W1, flattened, 0, 0), b1));
+    auto layer1 = relu(add(mul(W1, flattened, 0, 0), b1));
     auto layer2 = add(mul(W2, layer1, 0, 0), b2);
     auto loss = mse_loss(layer2, label);
     auto graph = ComputationGraph::BuildFromOutput(loss);
@@ -171,12 +171,6 @@ int main(int argc, char* argv[]) {
         pgraph->LoadParams("test/mnist_model_params_interrupt.txt");
         std::cout << "Loaded model from interrupt files." << std::endl;
     }  
-    // pgraph->LoadParams("mnist_model_params_interrupt.txt");
-    // ComputationGraph graph = ComputationGraph::BuildFromOutput(loss);
-    // graph.SaveArch("mnist_model_arch.txt");
-    // exit(0);
-    // 收集所有参数
-    // std::vector<VarPtr> params = {kernel_1, kernel_2, W1, b1, W2, b2};
     size_t total_params = 0;
     for (const auto& param : pgraph->parameter_nodes) {
         total_params += param->size();
@@ -194,106 +188,67 @@ int main(int argc, char* argv[]) {
     const double learning_rate = 0.001;
     const int num_epochs = 2;  // 减少epoch数用于测试
     const int batch_log_interval = 100;
-    
+    const size_t num_samples = dataset.size();
     std::cout << "\nStarting training..." << std::endl;
-    
-    for (int epoch = 0; epoch < num_epochs; epoch++) {
-        std::cout << "Epoch " << epoch + 1 << "/" << num_epochs << std::endl;
-        
-        double epoch_loss = 0.0;
-        int correct_predictions = 0;
-        
-        // 只使用前5000个样本进行测试
-        size_t train_samples = std::min(size_t(5000), dataset.size());
-        
-        for (size_t i = 0; i < train_samples; i++) {
-            // 设置输入数据
-            const auto& image_data = dataset.get_image(i);
-            auto label_data = dataset.get_one_hot_label(i);
-            x->set_input(image_data);
 
-            label->set_input(label_data);
-            
-            // 前向传播
-            loss->zero_grad_recursive();
-            loss->calc();
-            
-            // 记录损失
-            double current_loss = loss->item();
-            epoch_loss += current_loss;
-            
-            // 简单的准确率计算（找到最大输出）
-            const auto& predictions = layer2->data();
-            int predicted_class = 0;
-            double max_prob = predictions[0];
-            for (int j = 1; j < n_output; j++) {
-                if (predictions[j] > max_prob) {
-                    max_prob = predictions[j];
-                    predicted_class = j;
-                }
-            }
-            bool result= predicted_class == dataset.get_label(i) ? 1 : 0;
-            results.push_back(result);
-            if (result) {
-                correct_predictions++;
-            }
-            double accuracy_past50 = 0.0;
-            if (results.size() >= 50) {
-                int correct_past50 = std::count(results.end() - 50, results.end(), true);
-                accuracy_past50 = static_cast<double>(correct_past50) / 50.0 * 100.0;
-            } else {
-                int correct_so_far = std::count(results.begin(), results.end(), true);
-                accuracy_past50 = static_cast<double>(correct_so_far) / results.size() * 100.0;
-            }
-            double accuracy_past100 = 0.0;
-            if (results.size() >= 100) {
-                int correct_past100 = std::count(results.end() - 100, results.end(), true);
-                accuracy_past100 = static_cast<double>(correct_past100) / 100.0 * 100.0;
-            } else {
-                int correct_so_far = std::count(results.begin(), results.end(), true);
-                accuracy_past100 = static_cast<double>(correct_so_far) / results.size() * 100.0;
-            }
-            double accuracy_past500 = 0.0;
-            if (results.size() >= 500) {
-                int correct_past500 = std::count(results.end() - 500, results.end(), true);
-                accuracy_past500 = static_cast<double>(correct_past500) / 500.0 * 100.0;
-            } else {
-                int correct_so_far = std::count(results.begin(), results.end(), true);
-                accuracy_past500 = static_cast<double>(correct_so_far) / results.size() * 100.0;
-            }
-            print_vec(std::cout,predictions);
-            // 打印进度
-            std::cout<< "i: " << i << ", loss: " << std::fixed << std::setprecision(6) << current_loss << " prev_pred:" << predicted_class << " real:" << dataset.get_label(i) << " accuracy: " << std::fixed << std::setprecision(2) << (double(correct_predictions) / (i + 1) * 100.0) << "%" << " acc_p50:" << std::setprecision(2) << accuracy_past50 << "%" << " acc_p100:" << std::setprecision(2) << accuracy_past100 << "%" << " acc_p500:" << std::setprecision(2) << accuracy_past500 << "%" << "\r";
-            std::cout.flush();
-            if (i % batch_log_interval == 0) {
-                double avg_loss = epoch_loss / (i + 1);
-                double accuracy = double(correct_predictions) / (i + 1) * 100.0;
-                std::cout << "  Step " << i << "/" << train_samples 
-                          << ", Loss: " << std::fixed << std::setprecision(6) << current_loss
-                          << ", Avg Loss: " << avg_loss
-                          << ", Accuracy: " << std::setprecision(2) << accuracy << "%" 
-                          << std::endl;
-            }
-            
-            // 反向传播
-           loss->backward();
-            
-            // 参数更新
-            for (auto& param : pgraph->parameter_nodes) {
-                param->update(learning_rate);
+    double current_loss = 0.0;
+    double epoch_loss = 0.0;
+    int correct_predictions = 0;
+    auto load_data = [&](ComputationGraph* g) {
+        // 这里实现数据加载逻辑
+        const auto& image_data = dataset.get_image(g->i);
+        auto label_data = dataset.get_one_hot_label(g->i);
+        x->set_input(image_data);
+        label->set_input(label_data);
+    };
+    auto print_info_before = [&](ComputationGraph* g) {
+        std::cout<<"i: " << g->i ;
+    };
+    auto print_info_after = [&](ComputationGraph* g) {
+
+        std::cout << " loss: " <<std::fixed << std::setprecision(6) << g->output_nodes[0]->item();
+        epoch_loss += current_loss;
+        // 简单的准确率计算（找到最大输出）
+        const auto& predictions = layer2->data();
+        int predicted_class = 0;
+        double max_prob = predictions[0];
+        for (int j = 1; j < n_output; j++) {
+            if (predictions[j] > max_prob) {
+                max_prob = predictions[j];
+                predicted_class = j;
             }
         }
-        
-        // Epoch总结
-        double avg_epoch_loss = epoch_loss / train_samples;
-        double epoch_accuracy = double(correct_predictions) / train_samples * 100.0;
-        
-        std::cout << "Epoch " << epoch + 1 << " Summary:" << std::endl;
-        std::cout << "  Average Loss: " << std::fixed << std::setprecision(6) << avg_epoch_loss << std::endl;
-        std::cout << "  Accuracy: " << std::setprecision(2) << epoch_accuracy << "%" << std::endl;
-        std::cout << "  Correct: " << correct_predictions << "/" << train_samples << std::endl;
-        std::cout << std::endl;
-    }
+        int real = dataset.get_label(g->i);
+        bool result= predicted_class == real;
+        results.push_back(result);
+        if(result)
+            correct_predictions +=1;
+        auto get_acc = [](int pastN, const std::vector<bool>& results) {
+            if (results.size() >= pastN) {
+                int correct_count = std::count(results.end() - pastN, results.end(), true);
+                return static_cast<double>(correct_count) / pastN * 100.0;
+            } else {
+                int correct_so_far = std::count(results.begin(), results.end(), true);
+                return static_cast<double>(correct_so_far) / results.size() * 100.0;
+            }
+        };
+        double acc_p50 = get_acc(50, results);
+        double acc_p100 = get_acc(100, results);
+        double acc_p500 = get_acc(500, results);
+        std::cout<<std::setprecision(2);
+        print_vec(std::cout,predictions);
+        std::cout<<"pred: "<< predicted_class << " real: " << real;
+
+        std::cout<< " acc: " << (double(correct_predictions) / (g->i + 1) * 100.0);
+        std::cout << "% acc_p50:" << acc_p50;
+        std::cout << "% acc_p100:" << acc_p100;
+        std::cout << "% acc_p500:" << acc_p500;
+        std::cout << "% \r";
+        std::cout.flush();
+    };
+    pgraph->fit(
+    load_data, num_epochs, num_samples, learning_rate,
+    print_info_before, print_info_after);
     
     std::cout << "Training completed!" << std::endl;
     pgraph->SaveParams("test/mnist_model_params.txt");

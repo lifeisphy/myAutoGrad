@@ -5,6 +5,23 @@
 // 加法运算
 // get broadcasted index
 #include <assert.h>
+#define ADD(name, ...) MAKE_VAR_(add, name, __VA_ARGS__)
+#define SUB(name, ...) MAKE_VAR_(sub, name, __VA_ARGS__)
+#define MUL(name, ...) MAKE_VAR_(mul, name, __VA_ARGS__)
+#define MUL_ELEMWISE(name, ...) MAKE_VAR_(mul_elementwise, name, __VA_ARGS__)
+#define POW_ELEMWISE(name, ...) MAKE_VAR_(pow_elementwise, name, __VA_ARGS__)
+#define SUM(name, ...) MAKE_VAR_(sum, name, __VA_ARGS__)
+#define MEAN(name, ...) MAKE_VAR_(mean, name, __VA_ARGS__)
+#define RELU(name, ...) MAKE_VAR_(relu, name, __VA_ARGS__)
+#define SIGMOID(name, ...) MAKE_VAR_(sigmoid, name, __VA_ARGS__)
+#define TANH_ACTIVATION(name, ...) MAKE_VAR_(tanh_activation, name, __VA_ARGS__)
+#define MSE_LOSS(name, ...) MAKE_VAR_(mse_loss, name, __VA_ARGS__)
+#define BINARY_CROSS_ENTROPY_LOSS(name, ...) MAKE_VAR_(binary_cross_entropy_loss, name, __VA_ARGS__)
+#define SLICE(name, ...) MAKE_VAR_(slice, name, __VA_ARGS__)
+#define CONV2D(name, ...) MAKE_VAR_(conv2d, name, __VA_ARGS__)
+#define MAXPOOLING(name, ...) MAKE_VAR_(MaxPooling, name, __VA_ARGS__)
+#define STACK(name, ...) MAKE_VAR_(stack, name, __VA_ARGS__)
+#define FLATTEN(name, ...) MAKE_VAR_(flatten, name, __VA_ARGS__)
 Edge* add_link(VarPtr parent, VarPtr child, bool updated=false){
     // VarPtr real_parent, real_child;
     // while(parent->type() == Nodetype::ref)
@@ -32,7 +49,7 @@ std::vector<int> get_broadcast_idx(const std::vector<int>& result_idx, const std
 }
 
 
-VarPtr add(VarPtr a, VarPtr b)
+VarPtr add(VarPtr a, VarPtr b,const std::string &name="")
 {
 
     size_t len = std::max(a->shape().size(), b->shape().size());
@@ -55,7 +72,7 @@ VarPtr add(VarPtr a, VarPtr b)
     }
 
     std::vector<double> result_data(result_size);
-    auto result = make_var(result_data, result_shape);
+    auto result = make_var(result_data, result_shape,name);
     add_link(result, a);
     add_link(result, b);
     result->operator_name = "add";
@@ -106,7 +123,7 @@ VarPtr add(VarPtr a, VarPtr b)
 }
 
 // 减法运算
-VarPtr sub(VarPtr a, VarPtr b){
+VarPtr sub(VarPtr a, VarPtr b, const std::string &name=""){
 
     size_t len = std::max(a->shape().size(), b->shape().size());
     std::vector<size_t> result_shape(len);
@@ -128,7 +145,7 @@ VarPtr sub(VarPtr a, VarPtr b){
     }
 
     std::vector<double> result_data(result_size);
-    auto result = make_var(result_data, result_shape);
+    auto result = make_var(result_data, result_shape,name);
     result->operator_name = "sub";
     // 添加前向函数
     auto forward_fn = [a, b, result, result_size]() {
@@ -191,7 +208,7 @@ VarPtr sub(VarPtr a, VarPtr b){
 
 
 // 元素级乘法
-VarPtr mul_elementwise(VarPtr a, VarPtr b) {
+VarPtr mul_elementwise(VarPtr a, VarPtr b, const std::string &name="") {
     size_t len = std::max(a->shape().size(), b->shape().size());
     std::vector<size_t> result_shape(len);
     
@@ -211,7 +228,7 @@ VarPtr mul_elementwise(VarPtr a, VarPtr b) {
     }
     
     std::vector<double> result_data(result_size);
-    auto result = make_var(result_data, result_shape);
+    auto result = make_var(result_data, result_shape,name);
     result->operator_name = "mul_elementwise";
     // 添加前向函数
     auto forward_fn = [result, result_size]() {
@@ -268,10 +285,10 @@ VarPtr mul_elementwise(VarPtr a, VarPtr b) {
 
 }
 
-VarPtr mul(VarPtr a, VarPtr b, int axis_a = -1, int axis_b = -1)
+VarPtr mul(VarPtr a, VarPtr b, int axis_a = -1, int axis_b = -1, const std::string &name = "")
 {
     if (axis_a == -1 && axis_b == -1) {
-        return mul_elementwise(a, b);
+        return mul_elementwise(a, b, name);
     }
     // 张量乘法：沿指定轴收缩
     // 检查轴的有效性
@@ -313,7 +330,7 @@ VarPtr mul(VarPtr a, VarPtr b, int axis_a = -1, int axis_b = -1)
     }
     
     std::vector<double> result_data(result_size, 0.0);
-    auto result = make_var(result_data, result_shape);
+    auto result = make_var(result_data, result_shape, name);
     result->operator_name = "mul" + std::to_string(axis_a) + "," + std::to_string(axis_b);
     // 添加前向函数
     auto forward_fn = [a, b, result, result_size, axis_a, axis_b, contract_dim_a]() {
@@ -493,10 +510,10 @@ VarPtr mul(VarPtr a, VarPtr b, int axis_a = -1, int axis_b = -1)
         //     }else if(a->is_scalar()){
             //     }
             // }
-VarPtr pow_elementwise(VarPtr a, double exponent){
+VarPtr pow_elementwise(VarPtr a, double exponent, const std::string &name=""){
     
     std::vector<double> result_data(a->size());
-    auto result = make_var(result_data);
+    auto result = make_var(result_data, a->shape(), name);
     result->operator_name = "pow_elementwise" + std::to_string(exponent);
     // 添加前向函数
     auto forward_fn = [a, result, exponent]() {
@@ -527,9 +544,9 @@ VarPtr pow_elementwise(VarPtr a, double exponent){
     return result;
 }
 // 求和运算
-VarPtr sum(VarPtr a)
+VarPtr sum(VarPtr a, const std::string& name="")
 {
-    auto result = make_var(0.0);
+    auto result = make_var(0.0, name);
     result->operator_name = "sum";
     // 添加前向函数
     auto forward_fn = [a, result]() {
@@ -560,7 +577,7 @@ VarPtr sum(VarPtr a)
 
     return result;
 }
-VarPtr sum(std::vector<VarPtr> vars) {
+VarPtr sum(std::vector<VarPtr> vars, const std::string& name="") {
     // 对多个变量求和
     // 所有变量的形状相同
     if (vars.empty()) {
@@ -573,7 +590,7 @@ VarPtr sum(std::vector<VarPtr> vars) {
             throw std::runtime_error("All variables must have the same shape for summation");
         }
     }
-    auto result = make_var(std::vector<double>(expected_size, 0.0), expected_shape);
+    auto result = make_var(std::vector<double>(expected_size, 0.0), expected_shape, name);
     result->operator_name = "sum2";
     // 添加前向函数
     auto forward_fn = [vars, result]() {
@@ -602,9 +619,9 @@ VarPtr sum(std::vector<VarPtr> vars) {
     return result;
 }
 // 平均值运算
-VarPtr mean(VarPtr a)
+VarPtr mean(VarPtr a, const std::string& name="")
 {
-    auto result = make_var(0.0);
+    auto result = make_var(0.0, name);
     result->operator_name = "mean";
     // 添加前向函数
     auto forward_fn = [a, result]() {
@@ -645,10 +662,10 @@ VarPtr mean(VarPtr a)
  */
 
 // ReLU激活函数
-VarPtr relu(VarPtr a)
+VarPtr relu(VarPtr a, const std::string& name="")
 {
     std::vector<double> result_data(a->size());
-    auto result = make_var(result_data,a->shape());
+    auto result = make_var(result_data,a->shape(), name);
     result->operator_name = "ReLU";
     // 添加前向函数
     auto forward_fn = [a, result]() {
@@ -684,10 +701,10 @@ VarPtr relu(VarPtr a)
 }
 
 // Sigmoid激活函数
-VarPtr sigmoid(VarPtr a)
+VarPtr sigmoid(VarPtr a, const std::string& name="")
 {
     std::vector<double> result_data(a->size());
-    auto result = make_var(result_data,a->shape());
+    auto result = make_var(result_data,a->shape(), name);
     result->operator_name = "Sigmoid";
     // 添加前向函数
     auto forward_fn = [a, result]() {
@@ -721,10 +738,10 @@ VarPtr sigmoid(VarPtr a)
 }
 
 // Tanh激活函数
-VarPtr tanh_activation(VarPtr a)
+VarPtr tanh_activation(VarPtr a, const std::string& name="")
 {
     std::vector<double> result_data(a->size());
-    auto result = make_var(result_data,a->shape());
+    auto result = make_var(result_data,a->shape(), name);
     result->operator_name = "Tanh";
     // 添加前向函数
     auto forward_fn = [a, result]() {
@@ -762,7 +779,7 @@ VarPtr tanh_activation(VarPtr a)
  */
 
 // 均方误差损失函数
-VarPtr mse_loss(VarPtr predictions, VarPtr targets)
+VarPtr mse_loss(VarPtr predictions, VarPtr targets, const std::string& name="")
 {
     if (predictions->size() != targets->size())
     {
@@ -772,12 +789,12 @@ VarPtr mse_loss(VarPtr predictions, VarPtr targets)
     // 计算 MSE = mean((predictions - targets)^2)
     // std::cout << "Calculating MSE Loss" << std::endl;
     auto diff = sub(predictions, targets);
-    auto squared_diff = mul(diff, diff);
-    return mean(squared_diff);
+    auto squared_diff = mul_elementwise(diff, diff);
+    return mean(squared_diff, name);
 }
 
 // 二元交叉熵损失函数
-VarPtr binary_cross_entropy_loss(VarPtr predictions, VarPtr targets)
+VarPtr binary_cross_entropy_loss(VarPtr predictions, VarPtr targets, const std::string& name="")
 {
     if (predictions->size() != targets->size())
     {
@@ -785,7 +802,7 @@ VarPtr binary_cross_entropy_loss(VarPtr predictions, VarPtr targets)
     }
 
     std::vector<double> loss_data(predictions->size());
-    auto result = make_var(loss_data);
+    auto result = make_var(loss_data, {});
     result->operator_name = "BCE";
     // 添加前向函数
     auto forward_fn = [predictions, targets, result]() {
@@ -826,7 +843,7 @@ VarPtr binary_cross_entropy_loss(VarPtr predictions, VarPtr targets)
     };
     result->set_grad_fn(grad_fn);
 
-    return mean(result); // 返回平均损失
+    return mean(result, name); // 返回平均损失
 }
 
 /**
@@ -835,7 +852,7 @@ VarPtr binary_cross_entropy_loss(VarPtr predictions, VarPtr targets)
  * @param indices 索引列表，-1表示提取该维度的所有内容
  * 例如：slice(tensor, {0, -1, 2}) 表示取第0行，所有列，第2个深度
  */
-VarPtr slice(VarPtr input, const std::vector<int>& indices) {
+VarPtr slice(VarPtr input, const std::vector<int>& indices, const std::string& name="") {
     const auto& input_shape = input->shape();
     
     // 检查索引维度是否匹配
@@ -911,14 +928,11 @@ VarPtr slice(VarPtr input, const std::vector<int>& indices) {
             grad_refs.push_back(input->GradItemAddr(input_multi_idx));
         }
     }
-    auto result = make_ref(input, data_refs, grad_refs, output_shape);
+    auto result = make_ref(input, data_refs, grad_refs, output_shape, name);
     result->operator_name = "slice_";
-    for(auto it = indices.begin(); it != indices.end(); ++it){
-        result->operator_name += std::to_string(*it);
-        if(it + 1 != indices.end()){
-            result->operator_name += ",";
-        }
-    }
+    std::ostringstream oss;
+    print_vec(oss, indices, "{", ",", "}");
+    result->operator_name += oss.str();
     // 前向传播函数
     // auto forward_fn = [input, result, indices, input_shape, output_shape, 
     //                    is_slice_dim, fixed_indices, output_size]() {
@@ -979,7 +993,7 @@ VarPtr slice(VarPtr input, const std::vector<int>& indices) {
     result->set_grad_fn(grad_fn);
     return result;
 }
-VarPtr flatten(VarPtr input) {
+VarPtr flatten(VarPtr input, const std::string& name="") {
     // 将多维张量展平成一维张量
     std::vector<size_t> output_shape = {input->size()};
     std::vector<double*> data_refs;
@@ -991,7 +1005,7 @@ VarPtr flatten(VarPtr input) {
             grad_refs.push_back(input->GradItemAddr(input_multi_idx));
         }
     }
-    auto result = make_ref(input, data_refs, grad_refs, output_shape);
+    auto result = make_ref(input, data_refs, grad_refs, output_shape, name);
     result->operator_name = "flatten";
     // 前向传播函数
     auto forward_fn = []() {
@@ -1014,7 +1028,7 @@ VarPtr flatten(VarPtr input) {
     return result;
 }
 // 2D卷积运算
-VarPtr conv2d(VarPtr a, VarPtr b){
+VarPtr conv2d(VarPtr a, VarPtr b, const std::string& name=""){
     if(!a->is_matrix() || !b->is_matrix())
         throw std::runtime_error("Conv2d operation only supports 2D tensor inputs.");
     if(a->shape()[0] < b->shape()[0] || a->shape()[1] < b->shape()[1])
@@ -1023,7 +1037,7 @@ VarPtr conv2d(VarPtr a, VarPtr b){
     size_t out_cols = a->shape()[1] - b->shape()[1] + 1;
     std::vector<size_t> result_shape = {out_rows, out_cols};
     std::vector<double> result_data(out_rows * out_cols, 0.0);
-    auto result = make_var(result_data, result_shape);
+    auto result = make_var(result_data, result_shape, name);
     result->operator_name = "conv2d";
     // 添加前向函数
     auto forward_fn = [a, b, result, out_rows, out_cols]() {
@@ -1095,7 +1109,7 @@ VarPtr conv2d(VarPtr a, VarPtr b){
    
     return result;
 }
-VarPtr MaxPooling(VarPtr a, size_t filter_size=2){
+VarPtr MaxPooling(VarPtr a, size_t filter_size=2, const std::string& name=""){
     size_t stride = filter_size; // 默认步长等于滤波器大小
     if(!a->is_matrix())
         throw std::runtime_error("MaxPooling operation only supports 2D tensor inputs.");
@@ -1106,7 +1120,7 @@ VarPtr MaxPooling(VarPtr a, size_t filter_size=2){
     size_t out_cols = a->shape()[1] / stride;
     std::vector<size_t> result_shape = {out_rows, out_cols};
     std::vector<double> result_data(out_rows * out_cols, 0.0);
-    auto result = make_var(result_data, result_shape);
+    auto result = make_var(result_data, result_shape, name);
     result->operator_name = "MaxPooling_" + std::to_string(filter_size);
     // 添加前向函数
     auto forward_fn = [a, result, out_rows, out_cols, stride, filter_size]() {
@@ -1167,7 +1181,7 @@ VarPtr MaxPooling(VarPtr a, size_t filter_size=2){
     return result;
 }
 
-VarPtr stack(std::vector<VarPtr> vars){
+VarPtr stack(std::vector<VarPtr> vars, const std::string& name=""){
     // input parameters must have the same shape
     // output shape = { num_vars, shape}
     if(vars.empty())
@@ -1193,7 +1207,7 @@ VarPtr stack(std::vector<VarPtr> vars){
             grad_refs.push_back(vars[i]->GradItemAddr(j));
         }
     }
-    auto result = make_ref(vars, data_refs,grad_refs,result_shape);
+    auto result = make_ref(vars, data_refs,grad_refs,result_shape, name);
     result->operator_name = "stack";
     // 添加前向函数
     auto forward_fn = [vars, result, num_vars, var_size]() {

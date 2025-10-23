@@ -13,7 +13,7 @@
 #include <fstream>
 #include <map>
 #include <cassert>
-
+#pragma once
 // 在 Variable 类定义之前添加宏定义
 #define STRINGIFY(x) #x
 #define TOSTRING(x) STRINGIFY(x)
@@ -768,48 +768,14 @@ VarPtr make_input( std::vector<double> data, const std::vector<size_t> &shape = 
 }
 
 #include "operations.hpp"
-
+#include "optimizer.hpp"
 VarPtr operator+(VarPtr a, VarPtr b) { return add(a, b); }
 VarPtr operator-(VarPtr a, VarPtr b) { return sub(a, b); }
 VarPtr operator*(VarPtr a, VarPtr b) { return mul(a, b); }
 // VarPtr operator/(VarPtr a, VarPtr b) { return div(a, b); }  // div function is commented out
 VarPtr operator^(VarPtr a, double exponent) { return pow_elementwise(a, exponent); }
 
-class AdamOptimizer {
-    double learning_rate_;
-    double beta1_;
-    double beta2_;
-    double epsilon_;
-    std::map<VarPtr, std::pair<std::vector<double>, std::vector<double>>> moments_; // first: m, second: v
-public:
-    AdamOptimizer(double learning_rate=0.001, double beta1=0.9, double beta2=0.999, double epsilon=1e-8)
-        : learning_rate_(learning_rate), beta1_(beta1), beta2_(beta2), epsilon_(epsilon) {}
-    void set_parameter_nodes(std::vector<VarPtr> params) {
-        for (const auto& param : params) {
-            if (param->has_grad()) {
-                moments_[param] = {std::vector<double>(param->size(), 0.0), std::vector<double>(param->size(), 0.0)};
-            }
-        }
-    }
-    void update(VarPtr& var) {
-        if (!var->has_grad()) {
-            throw std::runtime_error("Variable does not have gradients for Adam update");
-        }
 
-        auto it = moments_.find(var);
-        if (it == moments_.end()) {
-            throw std::runtime_error("Variable not found in Adam optimizer moments");
-        }
-        auto& [m, v] = it->second;
-        for (size_t i = 0; i < var->size(); ++i) {
-            m[i] = beta1_ * m[i] + (1 - beta1_) * var->grad()[i];
-            v[i] = beta2_ * v[i] + (1 - beta2_) * var->grad()[i] * var->grad()[i];
-            double m_hat = m[i] / (1 - beta1_);
-            double v_hat = v[i] / (1 - beta2_);
-            var->Item(i) -= learning_rate_ * m_hat / (std::sqrt(v_hat) + epsilon_);
-        }
-    }
-};
 class ComputationGraph {
     public:
     std::vector<VarPtr> input_nodes;
@@ -896,7 +862,29 @@ class ComputationGraph {
         }
         return sorted_nodes;
     }
-
+    VarPtr get_node_by_name(const string& name){
+        for(auto & node: input_nodes){
+            if(node->name == name){
+                return node;
+            }
+        }
+        for(auto & node: parameter_nodes){
+            if(node->name == name){
+                return node;
+            }
+        }
+        for(auto & node: intermediate_nodes){
+            if(node->name == name){
+                return node;
+            }
+        }
+        for(auto & node: reference_nodes){
+            if(node->name == name){
+                return node;
+            }
+        }
+        throw std::runtime_error("Node with name " + name + " not found in computation graph");
+    }
     void SaveParams(string filename) {
         std::ofstream ofs(filename);
         if (!ofs) {
@@ -920,30 +908,29 @@ class ComputationGraph {
                 continue; // Skip invalid lines
             }
             std::string name = line.substr(0, colon_pos);
+            auto node = get_node_by_name(name);
+            if(node->type() != parameter){
+                throw std::runtime_error("Node " + name + " is not a parameter node");
+            }
+
             std::string values_str = line.substr(colon_pos + 1);
-            std::vector<double> values;
+            
             size_t start = 0;
             size_t end = values_str.find(',');
+            int i=0;
             while (end != std::string::npos) {
-                values.push_back(std::stod(values_str.substr(start, end - start)));
+                node->Item(i++) = std::stod(values_str.substr(start, end - start));
                 start = end + 1;
                 end = values_str.find(',', start);
+
             }
+            
             // Add the last value
             if (start < values_str.size()) {
-                values.push_back(std::stod(values_str.substr(start)));
+                node->Item(i++) = std::stod(values_str.substr(start));
             }
-            // Find the parameter by name and update its data
-            for (auto& param : parameter_nodes) {
-                if (param->name == name) {
-                    if (param->data().size() != values.size()) {
-                        throw std::runtime_error("Parameter size mismatch for " + name);
-                    }
-                    for (size_t i = 0; i < values.size(); ++i) {
-                        param->Item(i) = values[i];
-                    }
-                    break;
-                }
+            if(i != node->size()){
+                throw std::runtime_error("Loaded parameter size does not match for node " + name);
             }
         }
     }

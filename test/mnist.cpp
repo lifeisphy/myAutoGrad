@@ -9,15 +9,20 @@
 #include <algorithm>
 #include <signal.h>
 
+std::string outfile_interrupt = "out/mnist_model_params_interrupt.txt";
+std::string savefilename = "out/mnist_model_params.txt";
 ComputationGraph* pgraph = nullptr; // Global pointer to the computation graph
 void signal_handler(int signal){
     if(signal == SIGINT){
-        std::cout << "\nTraining interrupted by user." << std::endl;
-        pgraph->SaveParams("test/mnist_model_params_interrupt.txt");
+        std::cout << "\nInterrupted by user." << std::endl <<"saving to " << outfile_interrupt << std::endl;
+        pgraph->SaveParams(outfile_interrupt);
+        exit(0);
+    }
+    if(signal == SIGQUIT){
+        std::cout << "\nInterrupted by user." << std::endl ;
         exit(0);
     }
 }
-
 class MNISTDataset {
 private:
     std::vector<std::vector<double>> images_;
@@ -74,28 +79,23 @@ public:
         return one_hot;
     }
 };
+// 网络参数
+const int n = 28;
+const int n_input = n * n;
+const int n_output = 10;
+const int n_kernel = 32;
+const int n_kernel_2 = 48;
 
-int main(int argc, char* argv[]) {
-    std::vector<bool> results;
-    std::cout << "=== MNIST CNN Training in C++ ===" << std::endl;
-    
-    // 加载数据
-    MNISTDataset dataset;
-    if (!dataset.load_csv("testcases/digit-recognizer/train.csv")) {
-        return -1;
-    }
-    
-    // 网络参数
-    const int n = 28;
-    const int n_input = n * n;
-    const int n_output = 10;
-    const int n_kernel = 32;
-    const int n_kernel_2 = 48;
+size_t input_size;
+std::vector<bool> results;
+MNISTDataset dataset;
 
-    // 创建网络变量
-    auto x = make_input(std::vector<double>(n_input, 0.0), {n, n});
-    auto label = make_input(std::vector<double>(n_output, 0.0), {n_output});
-    
+void build_network(){
+     // 创建网络变量
+    // auto x = make_input(std::vector<double>(n_input, 0.0), {n, n});
+    // auto label = make_input(std::vector<double>(n_output, 0.0), {n_output});
+    MAKE_INPUT(x, std::vector<double>(n_input, 0.0), {n,n});
+    MAKE_INPUT(label, std::vector<double>(n_output, 0.0), {n_output});
     // 初始化卷积核权重
     std::random_device rd;
     std::mt19937 gen(42);  // 固定随机种子以确保结果可重现
@@ -108,18 +108,23 @@ int main(int argc, char* argv[]) {
         }
         return weights;
     };
-    
-    auto kernel_1 = make_param(init_weights(3 * 3 * n_kernel), {3, 3, n_kernel});
-    auto kernel_2 = make_param(init_weights(3 * 3 * n_kernel_2 * n_kernel), {3, 3, n_kernel, n_kernel_2});
+    MAKE_PARAM(kernel_1, init_weights(3 * 3 * n_kernel), {3, 3, n_kernel});
+    MAKE_PARAM(kernel_2, init_weights(3 * 3 * n_kernel_2 * n_kernel), {3, 3, n_kernel, n_kernel_2});
+    // auto kernel_1 = make_param(init_weights(3 * 3 * n_kernel), {3, 3, n_kernel});
+    // auto kernel_2 = make_param(init_weights(3 * 3 * n_kernel_2 * n_kernel), {3, 3, n_kernel, n_kernel_2});
     
     // 第一个卷积层
     std::cout << "Building first conv layer..." << std::endl;
     std::vector<VarPtr> output_1;
     for (int i = 0; i < n_kernel; i++) {
-        auto kernel_slice = slice(kernel_1, {-1, -1, i});  // 提取第i个卷积核
-        auto conv_out = conv2d(x, kernel_slice);
-        auto relu_out = relu(conv_out);
-        auto pool_out = MaxPooling(relu_out, 2);
+        SLICE(kernel_slice, kernel_1, {-1, -1, i});
+        CONV2D(conv_out, x, kernel_slice);
+        RELU(relu_out, conv_out);
+        MAXPOOLING(pool_out, relu_out, 2);
+        // auto kernel_slice = slice(kernel_1, {-1, -1, i});  // 提取第i个卷积核
+        // auto conv_out = conv2d(x, kernel_slice);
+        // auto relu_out = relu(conv_out);
+        // auto pool_out = MaxPooling(relu_out, 2);
         output_1.push_back(pool_out);
     }
     auto feature_maps_1 = stack(output_1);  // [32, 13, 13]
@@ -136,54 +141,55 @@ int main(int argc, char* argv[]) {
     for (int i = 0; i < n_kernel_2; i++) {
         std::vector<VarPtr> conv_results;
         for (int j = 0; j < n_kernel; j++) {
-            auto kernel_slice = slice(kernel_2, {-1, -1, j, i});
-            auto conv_out = conv2d(slices_1[j], kernel_slice);
-            auto relu_out = relu(conv_out);
-            auto pool_out = MaxPooling(relu_out, 2);
+            SLICE(kernel_slice, kernel_2, {-1, -1, j, i});
+            CONV2D(conv_out, slices_1[j], kernel_slice);
+            RELU(relu_out, conv_out);
+            MAXPOOLING(pool_out, relu_out, 2);
+            // conv_results.push_back(pool_out);
+            // auto kernel_slice = slice(kernel_2, {-1, -1, j, i});
+            // auto conv_out = conv2d(slices_1[j], kernel_slice);
+            // auto relu_out = relu(conv_out);
+            // auto pool_out = MaxPooling(relu_out, 2);
             conv_results.push_back(pool_out);
         }
-        auto summed = sum(conv_results);
+        SUM(summed, conv_results);
+        // auto summed = sum(conv_results);
         output_2.push_back(summed);
     }
-    auto feature_maps_2 = stack(output_2);
+    // auto feature_maps_2 = stack(output_2);
+    STACK(feature_maps_2, output_2);
     std::cout<<"Feature maps 2 shape: " << feature_maps_2->shape()[0] << "x" << feature_maps_2->shape()[1] << "x" << feature_maps_2->shape()[2] << std::endl;
     // 全连接层
     std::cout << "Building fully connected layers..." << std::endl;
-    size_t input_size = feature_maps_2->size();
+    input_size = feature_maps_2->size();
     const int mid_size = 128;
     std::cout<<"input size: "<< input_size <<std::endl;
-    auto W1 = make_param(init_weights(input_size * mid_size), {input_size, mid_size});
-    auto b1 = make_param(init_weights(mid_size), {mid_size});
-    auto W2 = make_param(init_weights(mid_size * n_output), {mid_size, n_output});
-    auto b2 = make_param(init_weights(n_output), {n_output});
-    std::cout<<"W1 shape: "<< W1->shape()[0] << "x" << W1->shape()[1] <<std::endl;
-    std::cout<<"W2 shape: "<< W2->shape()[0] << "x" << W2->shape()[1] <<std::endl;
-    auto flattened = flatten(feature_maps_2);
-    auto layer1 = relu(add(mul(W1, flattened, 0, 0), b1));
-    auto layer2 = add(mul(W2, layer1, 0, 0), b2);
-    auto loss = mse_loss(layer2, label);
-    auto graph = ComputationGraph::BuildFromOutput(loss);
-    pgraph = &graph; // 设置全局指针
-    signal(SIGINT, signal_handler); // 注册信号处理函数
-    
-    if(argc == 2 && std::string(argv[1]) == "resume"){
-        // pgraph->LoadArch("mnist_model_arch_interrupt.txt");
-        pgraph->LoadParams("test/mnist_model_params_interrupt.txt");
-        std::cout << "Loaded model from interrupt files." << std::endl;
-    }  
+    MAKE_PARAM(W1, init_weights(input_size * mid_size), {input_size, mid_size});
+    MAKE_PARAM(b1, init_weights(mid_size), {mid_size});
+    MAKE_PARAM(W2, init_weights(mid_size * n_output), {mid_size, n_output});
+    MAKE_PARAM(b2, init_weights(n_output), {n_output});
+    FLATTEN(flattened, feature_maps_2);
+    MUL(mul1, W1, flattened, 0, 0);
+    ADD(layer1_pre, mul1, b1);
+    RELU(layer1, layer1_pre);
+    MUL(mul2, W2, layer1, 0, 0);
+    ADD(output, mul2, b2);
+    MSE_LOSS(loss, output, label);
+    auto graph = new ComputationGraph();
+    *graph = ComputationGraph::BuildFromOutput(loss);
+    pgraph = graph;
     size_t total_params = 0;
     for (const auto& param : pgraph->parameter_nodes) {
+        std::cout<<"Param: " << param->name << " Shape: ";
+        print_vec(std::cout, param->shape());
+        std::cout << " Size: " << param->size() << std::endl;
         total_params += param->size();
     }
     std::cout << "Total parameters: " << total_params << std::endl;
     std::cout << "Network built successfully!" << std::endl;
-    std::cout << "Feature maps 2 shape: ";
-    for (size_t dim : feature_maps_2->shape()) {
-        std::cout << dim << " ";
-    }
-    std::cout << std::endl;
-    std::cout << "Input size for FC layer: " << input_size << std::endl;
-    
+
+}
+void train(){
     // 训练循环
     const double learning_rate = 0.001;
     const int num_epochs = 2;  // 减少epoch数用于测试
@@ -194,6 +200,9 @@ int main(int argc, char* argv[]) {
     double current_loss = 0.0;
     double epoch_loss = 0.0;
     int correct_predictions = 0;
+    auto x = pgraph->get_node_by_name("x");
+    auto label = pgraph->get_node_by_name("label");
+    auto output = pgraph->get_node_by_name("output");
     auto load_data = [&](ComputationGraph* g) {
         // 这里实现数据加载逻辑
         const auto& image_data = dataset.get_image(g->i);
@@ -209,7 +218,7 @@ int main(int argc, char* argv[]) {
         std::cout << " loss: " <<std::fixed << std::setprecision(6) << g->output_nodes[0]->item();
         epoch_loss += current_loss;
         // 简单的准确率计算（找到最大输出）
-        const auto& predictions = layer2->data();
+        const auto& predictions = output->data();
         int predicted_class = 0;
         double max_prob = predictions[0];
         for (int j = 1; j < n_output; j++) {
@@ -251,7 +260,92 @@ int main(int argc, char* argv[]) {
     print_info_before, print_info_after);
     
     std::cout << "Training completed!" << std::endl;
-    pgraph->SaveParams("test/mnist_model_params.txt");
-    std::cout << "Model parameters saved to mnist_model_params.txt" << std::endl;
-    return 0;
+    pgraph->SaveParams(savefilename);
+    std::cout << "Model parameters saved to " << savefilename << std::endl;
+}
+
+int main(int argc, char* argv[]) {
+
+    std::cout << "=== MNIST CNN Training in C++ ===" << std::endl;
+    
+    // 加载数据
+    if (!dataset.load_csv("testcases/digit-recognizer/train.csv")) {
+        return -1;
+    }
+
+    build_network();
+
+    
+    bool loadparams = false;
+    bool validate_ = false;
+    bool train_ = false;
+    if (argc == 1){
+        std::cout << "Usage: " << argv[0] << " load <model_params_file> validate <true/false>" << std::endl;
+    }
+    for(int i=1; i < argc; ){
+        auto cmd = std::string(argv[i]);
+        if(cmd == "load"){
+            auto arg = std::string(argv[i+1]);
+            pgraph->LoadParams(arg);
+            loadparams = true;
+            std::cout << "Loaded model from " << arg << std::endl;
+            i += 2;
+        }else if(cmd == "validate"){
+            validate_ = true;
+            i+= 1;
+        }else if(cmd == "train"){
+            train_ = true;
+            i += 1;
+        }else {
+            std::cout << "Unknown command: " << cmd << std::endl;
+            exit(1);
+        }
+    }
+    if(train_){
+        std::cout << "Starting training..." << std::endl;
+        signal(SIGINT, signal_handler); // 注册信号处理函数
+        signal(SIGQUIT, signal_handler);
+        train();
+    }else if(validate_){
+        if(!loadparams){
+            std::cout << "Please load model parameters before validation." << std::endl;
+            return -1;
+        }
+        auto x = pgraph->get_node_by_name("x");
+        auto label = pgraph->get_node_by_name("label");
+        auto output = pgraph->get_node_by_name("output");
+        int correct_predictions = 0;
+        for(int i=0; i< dataset.size(); i++){
+            // pgraph->i = i;
+            pgraph->output_nodes[0]->zero_grad_recursive();
+            x->set_input( dataset.get_image(i));
+            output->calc();
+            auto predictions = output->data();
+            int predicted_class = 0;
+            double max_prob = predictions[0];
+            for (int j = 1; j < n_output; j++) {
+                if (predictions[j] > max_prob) {
+                    max_prob = predictions[j];
+                    predicted_class = j;
+                }
+            }
+            int real = dataset.get_label(i);
+            bool result= predicted_class == real;
+            results.push_back(result);
+            if(result)
+                correct_predictions +=1;
+            std::cout<<"i: " << i ;
+            std::cout<<"pred: "<< predicted_class << " real: " << real << (result? "✔️":"❌");
+            std::cout<<std::setprecision(6);
+            std::cout<< " acc: " << (double(correct_predictions) / (i + 1) * 100.0) << "% ";
+            std::cout<<std::setprecision(2);
+            print_vec(std::cout,predictions);
+            std::cout<<"\n";
+            std::cout.flush();
+        }
+        std::cout<<"\nValidation completed!" << std::endl;
+        std::cout << "Final accuracy: " << (double(correct_predictions) / dataset.size() * 100.0) << "%" << std::endl;
+    }
+    
+
 }

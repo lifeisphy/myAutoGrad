@@ -55,3 +55,15 @@ void print_vec(std::ostream& os, const DataView& data_view, string open_bracket,
     }
     os << close_bracket;
 }
+
+std::vector<double> vec_r(size_t size, double scale = 0.1){
+    std::vector<double> data(size);
+    for(size_t i=0; i < size; i++){
+        data[i] = (rand() / double(RAND_MAX) - 0.5) * 2.0 * scale;  // [-scale, scale]
+    }
+    return data;
+}
+
+std::vector<double> zero_vec(size_t size){
+    return std::vector<double>(size, 0.0);
+}

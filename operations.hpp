@@ -5,6 +5,7 @@
 // 加法运算
 // get broadcasted index
 #include <assert.h>
+#include "utils.hpp"
 #define ADD(name, ...) MAKE_VAR_(add, name, __VA_ARGS__)
 #define SUB(name, ...) MAKE_VAR_(sub, name, __VA_ARGS__)
 #define MUL(name, ...) MAKE_VAR_(mul, name, __VA_ARGS__)
@@ -22,6 +23,7 @@
 #define MAXPOOLING(name, ...) MAKE_VAR_(MaxPooling, name, __VA_ARGS__)
 #define STACK(name, ...) MAKE_VAR_(stack, name, __VA_ARGS__)
 #define FLATTEN(name, ...) MAKE_VAR_(flatten, name, __VA_ARGS__)
+#define LINEAR(name, ...) MAKE_VAR_(Linear, name, __VA_ARGS__)
 Edge* add_link(VarPtr parent, VarPtr child, bool updated=false){
     // VarPtr real_parent, real_child;
     // while(parent->type() == Nodetype::ref)
@@ -48,7 +50,53 @@ std::vector<int> get_broadcast_idx(const std::vector<int>& result_idx, const std
     return var_idx;
 }
 
+struct Linear {
+    VarPtr weights;
+    VarPtr bias;
+    bool use_bias = true;
+    size_t in_features;
+    size_t out_features;
 
+    Linear(size_t input_dim, size_t output_dim, bool use_bias=true)
+        : in_features(input_dim), out_features(output_dim), use_bias(use_bias) {
+        // 初始化权重和偏置
+        weights = make_param(vec_r(input_dim * output_dim, 0.1), { output_dim,input_dim}, "linear_weights");
+        if (use_bias) {
+            bias = make_param(vec_r(output_dim, 0.1), {output_dim}, "linear_bias");
+        }
+    }
+    Linear(){
+        in_features = 0;
+        out_features = 0;
+        use_bias = false;
+    }
+    Linear(VarPtr weights){
+        this->weights = weights;
+        assert(weights->is_matrix());
+        this->in_features = weights->shape()[1];
+        this->out_features = weights->shape()[0];
+        this->use_bias = false;
+    }
+    Linear(VarPtr weights, VarPtr bias){
+        this->weights = weights;
+        this->bias = bias;
+        assert(weights->is_matrix());
+        assert(bias->is_vector());
+        assert(bias->shape()[0] == weights->shape()[0]);
+        this->in_features = weights->shape()[1];
+        this->out_features = weights->shape()[0];
+        this->use_bias = true;
+    }
+
+    VarPtr operator()(VarPtr input){
+        assert(input->shape().size() == 1 && input->shape()[0] == in_features);
+        auto wx =  mul(weights, input, 1,0);
+        if(use_bias){
+            return add(wx, bias);
+        }
+        return wx;
+    }
+};
 VarPtr add(VarPtr a, VarPtr b,const std::string &name="")
 {
 
@@ -1027,6 +1075,50 @@ VarPtr flatten(VarPtr input, const std::string& name="") {
     result->set_grad_fn(grad_fn);
     return result;
 }
+
+VarPtr concat( VarPtr a, VarPtr b, const std::string& name=""){
+    if(!a->is_vector() || !b->is_vector())
+        throw std::runtime_error("Concat operation only supports 1D tensor inputs.");
+    std::vector<size_t> result_shape = {a->shape()[0] + b->shape()[0]};
+    std::vector<double> result_data(result_shape[0], 0.0);
+    for (size_t i = 0; i < a->shape()[0]; i++) {
+        result_data[i] = a->Item({static_cast<int>(i)});
+    }
+    for (size_t i = 0; i < b->shape()[0]; i++) {
+        result_data[a->shape()[0] + i] = b->Item({static_cast<int>(i)});
+    }
+    auto result = make_var(result_data, result_shape);
+    result->operator_name = "concat";
+    // 添加前向函数
+    auto forward_fn = []() {
+        // do nothing as data_refs already reference input data
+    };
+    result->set_forward_fn(forward_fn);
+    auto link = add_link(result, a);
+    link = add_link(result, b);
+    // 添加反向函数
+    auto grad_fn = [link, a, b, result](const DataView &grad_output) {
+        if (a->has_grad()) {
+            std::vector<double> grad_a(a->size(), 0.0);
+            for (size_t i = 0; i < a->shape()[0]; i++) {
+                grad_a[i] = grad_output.Item({static_cast<int>(i)});
+            }
+            link->updated = true;
+            a->accumulate_gradient(grad_a);
+        }
+        if (b->has_grad()) {
+            std::vector<double> grad_b(b->size(), 0.0);
+            for (size_t i = 0; i < b->shape()[0]; i++) {
+                grad_b[i] = grad_output.Item({static_cast<int>(a->shape()[0] + i)});
+            }
+            link->updated = true;
+            b->accumulate_gradient(grad_b);
+        }
+    };
+    result->set_grad_fn(grad_fn);
+    return result;
+}
+
 // 2D卷积运算
 VarPtr conv2d(VarPtr a, VarPtr b, const std::string& name=""){
     if(!a->is_matrix() || !b->is_matrix())

@@ -4,6 +4,7 @@
 
 // 加法运算
 // get broadcasted index
+#pragma once
 #include <assert.h>
 #include "utils.hpp"
 #define ADD(name, ...) MAKE_VAR_(add, name, __VA_ARGS__)
@@ -24,79 +25,76 @@
 #define STACK(name, ...) MAKE_VAR_(stack, name, __VA_ARGS__)
 #define FLATTEN(name, ...) MAKE_VAR_(flatten, name, __VA_ARGS__)
 #define LINEAR(name, ...) MAKE_VAR_(Linear, name, __VA_ARGS__)
-Edge* add_link(VarPtr parent, VarPtr child, bool updated=false){
-    // VarPtr real_parent, real_child;
-    // while(parent->type() == Nodetype::ref)
-    //     parent = parent->ref;
-    // while(child->type() == Nodetype::ref)
-    //     child = child->ref;
+// 在 Variable 类定义之前添加宏定义
+#define STRINGIFY(x) #x
+#define TOSTRING(x) STRINGIFY(x)
 
-    auto e = new Edge(parent, child, updated);
-    parent->add_child(e);
-    child->add_parent(e);
-    return e;
-}
-std::vector<int> get_broadcast_idx(const std::vector<int>& result_idx, const std::vector<size_t>& var_shape) {
-    int result_dims = result_idx.size();
-    if (var_shape.empty()) return {};
+// 为了支持变量名追踪，添加一个宏来创建带名称的变量
+#define MAKE_VAR_(type, name, ...) \
+    auto name = type(__VA_ARGS__, TOSTRING(name)); \
 
-    std::vector<int> var_idx(var_shape.size());
-    int offset = result_dims - var_shape.size();
-    
-    for (size_t j = 0; j < var_shape.size(); j++) {
-        int idx_val = (var_shape[j] == 1) ? 0 : result_idx[j + offset];
-        var_idx[j] = idx_val;
-    }
-    return var_idx;
+#define MAKE_INPUT(name, ...) MAKE_VAR_(make_input, name, __VA_ARGS__)
+#define MAKE_PARAM(name, ...) MAKE_VAR_(make_param, name, __VA_ARGS__)
+#define MAKE_REF(name, ...) MAKE_VAR_(make_ref, name, __VA_ARGS__)
+#define MAKE_VAR(name, ...) MAKE_VAR_(make_var, name, __VA_ARGS__)
+VarPtr make_var(double value, const std::string& name="")
+{
+    VarPtr a = std::make_shared<Variable>(value, intermediate);
+    a->name = get_name(name, "var");
+    return a;
 }
 
-struct Linear {
-    VarPtr weights;
-    VarPtr bias;
-    bool use_bias = true;
-    size_t in_features;
-    size_t out_features;
+VarPtr make_var(std::vector<double> data, const std::vector<size_t> &shape = {}, const std::string &name = "")
+{
+    VarPtr a = std::make_shared<Variable>(data, intermediate, shape);
+    a->name = get_name(name, "var");
+    return a;
+}
 
-    Linear(size_t input_dim, size_t output_dim, bool use_bias=true)
-        : in_features(input_dim), out_features(output_dim), use_bias(use_bias) {
-        // 初始化权重和偏置
-        weights = make_param(vec_r(input_dim * output_dim, 0.1), { output_dim,input_dim}, "linear_weights");
-        if (use_bias) {
-            bias = make_param(vec_r(output_dim, 0.1), {output_dim}, "linear_bias");
-        }
-    }
-    Linear(){
-        in_features = 0;
-        out_features = 0;
-        use_bias = false;
-    }
-    Linear(VarPtr weights){
-        this->weights = weights;
-        assert(weights->is_matrix());
-        this->in_features = weights->shape()[1];
-        this->out_features = weights->shape()[0];
-        this->use_bias = false;
-    }
-    Linear(VarPtr weights, VarPtr bias){
-        this->weights = weights;
-        this->bias = bias;
-        assert(weights->is_matrix());
-        assert(bias->is_vector());
-        assert(bias->shape()[0] == weights->shape()[0]);
-        this->in_features = weights->shape()[1];
-        this->out_features = weights->shape()[0];
-        this->use_bias = true;
-    }
 
-    VarPtr operator()(VarPtr input){
-        assert(input->shape().size() == 1 && input->shape()[0] == in_features);
-        auto wx =  mul(weights, input, 1,0);
-        if(use_bias){
-            return add(wx, bias);
-        }
-        return wx;
-    }
-};
+VarPtr make_ref(VarPtr var,std::vector<double*> &data,std::vector<double*> grad, const std::vector<size_t> &shape = {}, const std::string &name = "")
+{
+    auto a = Variable::Ref_Variable({var}, data, grad, shape);
+    a->name = get_name(name, "ref");
+    return a;
+}
+VarPtr make_ref(std::vector<VarPtr> vars,std::vector<double*> &data,std::vector<double*> grad, const std::vector<size_t> &shape = {}, const std::string &name = "")
+{
+    auto a = Variable::Ref_Variable(vars, data, grad, shape);
+    a->name = get_name(name, "ref");
+    return a;
+}
+
+VarPtr make_param(double value, const std::vector<size_t> &shape = {}, const std::string &name = "")
+{
+    VarPtr a = std::make_shared<Variable>(value, parameter, shape);
+    a->name = get_name(name, "param");
+    return a;
+}
+VarPtr make_param( std::vector<double> data, const std::vector<size_t> &shape = {}, const std::string &name = "")
+{
+    VarPtr a = std::make_shared<Variable>(data, parameter, shape);
+    a->name = get_name(name, "param");
+    return a;
+}
+VarPtr make_input(double value, const std::vector<size_t> &shape = {}, const std::string &name = "")
+{
+    VarPtr a = std::make_shared<Variable>(value, input, shape);
+    a->name = get_name(name, "input");
+    return a;
+}
+VarPtr make_input( std::vector<double> data, const std::vector<size_t> &shape = {}, const std::string &name = "")
+{
+    VarPtr a = std::make_shared<Variable>(data, input, shape);
+    a->name = get_name(name, "input");
+    return a;
+}
+
+
+
+
+
+
 VarPtr add(VarPtr a, VarPtr b,const std::string &name="")
 {
 
@@ -265,7 +263,15 @@ VarPtr mul_elementwise(VarPtr a, VarPtr b, const std::string &name="") {
         size_t a_dim = (i < a->shape().size()) ? a->shape()[a->shape().size()-i-1] : 1;
         size_t b_dim = (i < b->shape().size()) ? b->shape()[b->shape().size()-i-1] : 1;
         if (a_dim != b_dim && a_dim != 1 && b_dim != 1) {
-            throw std::runtime_error("Incompatible sizes for element-wise multiplication");
+            std::string errmsg = "Incompatible sizes for element-wise multiplication: name:" + a->name + " shape:";
+            std::ostringstream oss;
+            print_vec(oss, a->shape(), "[", ",", "]");
+            errmsg += oss.str();
+            errmsg += " vs b name:" + b->name + " shape:";
+            std::ostringstream oss2;
+            print_vec(oss2, b->shape(), "[", ",", "]");
+            errmsg += oss2.str();
+            throw std::runtime_error(errmsg);
         }
         result_shape[len-1-i] = std::max(a_dim, b_dim);
     }
@@ -933,13 +939,11 @@ VarPtr slice(VarPtr input, const std::vector<int>& indices, const std::string& n
         output_shape = {1};
     }
     
-    // 计算输出大小
     size_t output_size = 1;
     for (size_t dim : output_shape) {
         output_size *= dim;
     }
     
-    // 创建输出张量
     std::vector<double> output_data(output_size);
     // auto result = make_var(output_data, output_shape);
     
@@ -982,11 +986,6 @@ VarPtr slice(VarPtr input, const std::vector<int>& indices, const std::string& n
     print_vec(oss, indices, "{", ",", "}");
     result->operator_name += oss.str();
     // 前向传播函数
-    // auto forward_fn = [input, result, indices, input_shape, output_shape, 
-    //                    is_slice_dim, fixed_indices, output_size]() {
-    //                     // do nothing as data_refs already reference input data
-    // };
-    
     auto forward_fn = []() {
         // do nothing as data_refs already reference input data
     };
@@ -1001,45 +1000,73 @@ VarPtr slice(VarPtr input, const std::vector<int>& indices, const std::string& n
         // no need to accumulate again
         link->updated = true;
         input->accumulate_gradient({},false);
-                    // input->accumulate_gradient(grad_output);
-        // do nothing as grad_refs already reference input grad
-
-        // std::cout<<"Slice grad_fn called."<<std::endl;
-        // if (input->has_grad()) {
-        //     std::vector<double> input_grad(input->size(), 0.0);
-            
-        //     for (size_t out_idx = 0; out_idx < output_size; out_idx++) {
-        //         // 将输出的平坦索引转换为多维索引
-        //         std::vector<int> output_multi_idx = result->PlainItemIndex(out_idx);
-                
-        //         // 构造输入张量的索引（与前向传播相同的逻辑）
-        //         std::vector<int> input_multi_idx(input_shape.size());
-        //         size_t output_dim_counter = 0;
-                
-        //         for (size_t i = 0; i < input_shape.size(); i++) {
-        //             if (is_slice_dim[i]) {
-        //                 if (output_multi_idx.size() == 1 && output_shape.size() > 1) {
-        //                     input_multi_idx[i] = 0;
-        //                 } else if (output_dim_counter < output_multi_idx.size()) {
-        //                     input_multi_idx[i] = output_multi_idx[output_dim_counter];
-        //                     output_dim_counter++;
-        //                 }
-        //             } else {
-        //                 input_multi_idx[i] = fixed_indices[i];
-        //             }
-        //         }
-                
-        //         // 将梯度累加到对应的输入位置
-        //         size_t input_flat_idx = input->ItemIndex(input_multi_idx);
-        //         input_grad[input_flat_idx] += grad_output[out_idx];
-        //     }
-        //     link->updated = true;    
-        //     input->accumulate_gradient(input_grad);
-        // }
     };
     
     result->set_grad_fn(grad_fn);
     return result;
+}
+
+
+VarPtr slice_indices(VarPtr input, const std::vector<idx_range>& indices, const std::string& name=""){
+    // 根据范围切片张量
+    // indices: start(default 0), stop(default len), step(default 1) for each dimension
+    // the real range is [start, stop)
+    // if any integer is negative (say -k), it means d-k, where d is the size of that dimension 
+    assert(input->shape().size() == indices.size());
+    std::vector<std::vector<int>> index_lists;
+    
+    size_t output_size = 1;
+    std::vector<size_t> output_shape;
+    for(int i=0; i < input->shape().size(); i++){
+        auto [start, stop, step] = indices[i];
+        auto vec = range(start, stop, step, input->shape()[i]);
+        index_lists.push_back(vec);
+        output_size *= vec.size();
+        output_shape.push_back(vec.size());
+    }
+    std::vector<double*> data_refs(output_size);
+    std::vector<double*> grad_refs(output_size);
+    // print_vec(std::cout, output_shape, "Output shape: {", ",", "}\n");
+    auto result_tmp = make_ref({input}, data_refs,grad_refs,output_shape,name );
+    for(size_t out_idx = 0; out_idx < output_size; out_idx ++){
+        std::vector<int> output_multi_idx = result_tmp->PlainItemIndex(out_idx);
+        std::vector<int> orig_multi_idx;
+        for(int i=0; i < output_multi_idx.size(); i++){
+            int idx = output_multi_idx[i];
+            orig_multi_idx.push_back(index_lists[i][idx]);
+        }
+        // print_vec(std::cout, orig_multi_idx, "orig idx: {", ",", "} -> ");
+        // print_vec(std::cout, output_multi_idx, "out idx: {", ",", "}\n");
+        data_refs[out_idx] = input->ItemAddr(orig_multi_idx);
+        if(input->has_grad()){
+            grad_refs[out_idx] = input->GradItemAddr(orig_multi_idx);
+        }
+    }
+    auto result = make_ref(input, data_refs, grad_refs, output_shape, name);
+    result->operator_name = "slice__";
+    std::ostringstream oss;
+    print_vec(oss, indices, "{",",","}");
+    result->operator_name += oss.str();
+    auto forward_fn = [](){};
+    result->set_forward_fn(forward_fn);
+    auto link = add_link(result, input);
+    auto grad_fn = [link, input](const DataView& grad_output){
+        link->updated = true;
+        input->accumulate_gradient({}, false);
+    };
+    result ->set_grad_fn(grad_fn);
+    return result;
+}
+
+
+/**
+ * 切片函数 - 从多维张量中提取子张量
+ * @param input 输入张量
+ * @param slice_str 切片字符串，例如 "0:3, :, 2"
+ * @param name 变量名称
+ */
+VarPtr slice_(VarPtr input ,const std::string slice_str, const std::string& name=""){
+    return slice_indices(input, parse_slices(slice_str,input->shape()), name);
 }
 VarPtr flatten(VarPtr input, const std::string& name="") {
     // 将多维张量展平成一维张量
@@ -1063,7 +1090,7 @@ VarPtr flatten(VarPtr input, const std::string& name="") {
     auto link = add_link(result, input);   
 
     // 反向传播函数
-    auto grad_fn = [link, input, result, output_shape]
+    auto grad_fn = [link, input]
                    (const DataView& grad_output) {
         // gradient of input has been updated by ref result
         // no need to accumulate again
@@ -1079,41 +1106,48 @@ VarPtr flatten(VarPtr input, const std::string& name="") {
 VarPtr concat( VarPtr a, VarPtr b, const std::string& name=""){
     if(!a->is_vector() || !b->is_vector())
         throw std::runtime_error("Concat operation only supports 1D tensor inputs.");
-    std::vector<size_t> result_shape = {a->shape()[0] + b->shape()[0]};
-    std::vector<double> result_data(result_shape[0], 0.0);
-    for (size_t i = 0; i < a->shape()[0]; i++) {
-        result_data[i] = a->Item({static_cast<int>(i)});
+    
+    std::vector<size_t> output_shape = {a->size() + b->size()};
+    std::vector<double*> data_refs;
+    std::vector<double*> grad_refs;
+    
+
+    // std::vector<size_t> result_shape = {a->shape()[0] + b->shape()[0]};
+    // std::vector<double> result_data(result_shape[0], 0.0);
+    for (size_t i = 0; i < a->size(); i++) {
+        data_refs.push_back(a->ItemAddr(i));
+        if(a->has_grad()){
+            grad_refs.push_back(a->GradItemAddr(i));
+        }else {
+            grad_refs.push_back(nullptr);
+        }
     }
-    for (size_t i = 0; i < b->shape()[0]; i++) {
-        result_data[a->shape()[0] + i] = b->Item({static_cast<int>(i)});
+    for(size_t i = 0; i < b->size(); i ++){
+        data_refs.push_back(b->ItemAddr(i));
+        if(b->has_grad()){
+            grad_refs.push_back(b->GradItemAddr(i));
+        }else {
+            grad_refs.push_back(nullptr);
+        }
     }
-    auto result = make_var(result_data, result_shape);
+    auto result = make_ref({a,b}, data_refs, grad_refs, output_shape, name);
     result->operator_name = "concat";
     // 添加前向函数
     auto forward_fn = []() {
         // do nothing as data_refs already reference input data
     };
     result->set_forward_fn(forward_fn);
-    auto link = add_link(result, a);
-    link = add_link(result, b);
+    auto linka = add_link(result, a);
+    auto linkb = add_link(result, b);
     // 添加反向函数
-    auto grad_fn = [link, a, b, result](const DataView &grad_output) {
-        if (a->has_grad()) {
-            std::vector<double> grad_a(a->size(), 0.0);
-            for (size_t i = 0; i < a->shape()[0]; i++) {
-                grad_a[i] = grad_output.Item({static_cast<int>(i)});
-            }
-            link->updated = true;
-            a->accumulate_gradient(grad_a);
-        }
-        if (b->has_grad()) {
-            std::vector<double> grad_b(b->size(), 0.0);
-            for (size_t i = 0; i < b->shape()[0]; i++) {
-                grad_b[i] = grad_output.Item({static_cast<int>(a->shape()[0] + i)});
-            }
-            link->updated = true;
-            b->accumulate_gradient(grad_b);
-        }
+    auto grad_fn = [linka, linkb,a,b](const DataView& grad_output){
+        // do nothing as grad_refs already reference input grad
+        linka->updated = true;
+        linkb->updated = true;
+        if(a->has_grad())
+            a->accumulate_gradient({},false);
+        if(b->has_grad())
+            b->accumulate_gradient({},false);
     };
     result->set_grad_fn(grad_fn);
     return result;
@@ -1338,3 +1372,56 @@ VarPtr stack(std::vector<VarPtr> vars, const std::string& name=""){
 }
 
 
+struct Linear {
+    VarPtr weights;
+    VarPtr bias;
+    bool use_bias = true;
+    size_t in_features;
+    size_t out_features;
+
+    Linear(size_t input_dim, size_t output_dim, bool use_bias=true)
+        : in_features(input_dim), out_features(output_dim), use_bias(use_bias) {
+        // 初始化权重和偏置
+        weights = make_param(vec_r(input_dim * output_dim, 0.1), { output_dim,input_dim}, "linear_weights");
+        if (use_bias) {
+            bias = make_param(vec_r(output_dim, 0.1), {output_dim}, "linear_bias");
+        }
+    }
+    Linear(){
+        in_features = 0;
+        out_features = 0;
+        use_bias = false;
+    }
+    Linear(VarPtr weights){
+        this->weights = weights;
+        assert(weights->is_matrix());
+        this->in_features = weights->shape()[1];
+        this->out_features = weights->shape()[0];
+        this->use_bias = false;
+    }
+    Linear(VarPtr weights, VarPtr bias){
+        this->weights = weights;
+        this->bias = bias;
+        assert(weights->is_matrix());
+        assert(bias->is_vector());
+        assert(bias->shape()[0] == weights->shape()[0]);
+        this->in_features = weights->shape()[1];
+        this->out_features = weights->shape()[0];
+        this->use_bias = true;
+    }
+
+    VarPtr operator()(VarPtr input){
+        assert(input->shape().size() == 1 && input->shape()[0] == in_features);
+        auto wx =  mul(weights, input, 1,0);
+        if(use_bias){
+            return add(wx, bias);
+        }
+        return wx;
+    }
+};
+
+VarPtr operator+(VarPtr a, VarPtr b) { return add(a, b); }
+VarPtr operator-(VarPtr a, VarPtr b) { return sub(a, b); }
+VarPtr operator*(VarPtr a, VarPtr b) { return mul(a, b); }
+// VarPtr operator/(VarPtr a, VarPtr b) { return div(a, b); }  // div function is commented out
+VarPtr operator^(VarPtr a, double exponent) { return pow_elementwise(a, exponent); }

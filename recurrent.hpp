@@ -1,5 +1,5 @@
+#pragma once
 #include "autograd.hpp"
-#include "operations.hpp"
 using recurrent_op = std::function<VarPtr(VarPtr hidden_state, VarPtr input, bool make_params, std::vector<VarPtr>& params)>;
 class RecurrentOperation {
     public:
@@ -7,61 +7,65 @@ class RecurrentOperation {
     VarPtr hidden_output;
     VarPtr input;
     std::vector<VarPtr> params;
+    
     // useful only after expand is called
     std::vector<VarPtr> hidden;
     std::vector<VarPtr> inputs;
     std::vector<VarPtr> outputs;
+    std::function<VarPtr(VarPtr)> output_transform_, input_transform_;
     // function signature: fn(hidden_state, input, make_params, params)
     // if make_params is true, fn will create parameters and append to params vector
     // otherwise, fn will use the existing params in the vector
     recurrent_op fn;
     RecurrentOperation(recurrent_op fn_, VarPtr hidden_input, VarPtr input)
         : hidden_input(hidden_input), input(input), fn(fn_) {
-        hidden_output = fn(hidden_input, input, true, params);
-
-        hidden.push_back(hidden_input);
-        hidden.push_back(hidden_output);
-        inputs.push_back(input);
+        
     }
 
     // Expand the recurrent operation for given times
     // @param times: resulting number of inputs (time steps)
     // len(inputs)== times, len(hidden) == times + 1, 
     // len(outputs) == times if multiple_outputs==true else 1
-    void expand(int times, bool multiple_outputs = false, std::function<VarPtr(VarPtr)> transform = nullptr){
-        VarPtr h_prev = hidden_output;
-        size_t input_size = input->size();
-        std::vector<size_t> input_shape = input->shape();
-        for(int t=0; t < times - 1; t++){
-            if(multiple_outputs){
-                // y_{t} = h_{t+1}
-                VarPtr out;
-                if(transform) {
-                    out = transform(h_prev);
-                }else {
-                    out = h_prev;
-                }
-                outputs.push_back(out);
+    void expand(int times, bool multiple_outputs = false, std::function<VarPtr(VarPtr)> output_transform = nullptr,
+    std::function<VarPtr(VarPtr)> input_transform = nullptr) {
+        output_transform_ = output_transform;
+        input_transform_ = input_transform;
+        
+        // hidden_output = fn(hidden_input, input, true, params);
+        // hidden.push_back(hidden_input);
+        // hidden.push_back(hidden_output);
+        // inputs.push_back(input);
+
+        VarPtr h = hidden_input;
+        VarPtr hnext;
+        for(int t=0; t < times; t++){
+            VarPtr raw_in;
+            if(t == 0){
+                raw_in = input;
+            }else {
+                raw_in = make_input(zero_vec(input->size()), input->shape(), input->name + std::to_string(t+1));
             }
-            auto in = make_input(zero_vec(input_size), input_shape, input->name + std::to_string(t+1));
-            VarPtr h_new = fn(h_prev, in, false, params); // use existing params
-            inputs.push_back(in);
-            hidden.push_back(h_new);
-            h_prev = h_new;
+            VarPtr in = input_transform_ ? input_transform_(raw_in) : raw_in;
+
+            if(t == 0){
+                hnext = fn(h, in, true, params); // create params at first step
+            }else {
+                hnext = fn(h, in, false, params); // use existing params
+            }
+            VarPtr out = output_transform_ ? output_transform_(hnext) : hnext;
+            outputs.push_back(out);
+            inputs.push_back(raw_in);
+            hidden.push_back(h);
+            h = hnext;
         }
         // y_{n-1}=h_n
-        VarPtr out;
-        if(transform) {
-            out = transform(h_prev);
-        }else {
-            out = h_prev;
-        }
+        VarPtr out = output_transform_ ? output_transform_(hnext) : hnext;
         outputs.push_back(out);
-
     }
 };
 recurrent_op linear_( bool use_bias=true){
     return [=](VarPtr hidden_state, VarPtr input, bool make_params, std::vector<VarPtr>& params) -> VarPtr {
+        hidden_state->require_all_gradients_ = false;
         auto in = stack({hidden_state, input}, "recurrent_combined");
         
         if(make_params){
@@ -90,13 +94,15 @@ recurrent_op linear_( bool use_bias=true){
 }
 recurrent_op lstm_(size_t long_term_size, size_t short_term_size){
     return [=](VarPtr hidden_state, VarPtr input, bool make_params, std::vector<VarPtr>& params) -> VarPtr {
+        hidden_state->require_all_gradients_ = false;
         size_t hidden_dim = hidden_state->size(); // hidden_state contains both h(long) and c(short)
         assert(hidden_dim == long_term_size + short_term_size);
+        assert(long_term_size == short_term_size); // for simplicity, we require long and short term sizes to be equal
         size_t input_dim = input->size();
-        auto h = slice_(hidden_state, {0}, {long_term_size}, "lstm_h_prev");
-        auto c = slice_(hidden_state, {long_term_size}, {hidden_dim}, "lstm_c_prev");
+        auto h = slice_indices(hidden_state, {idx_range(0, long_term_size, 1)}, "lstm_h_prev");
+        auto c = slice_indices(hidden_state, {idx_range(long_term_size, hidden_dim, 1)}, "lstm_c_prev");
         size_t combined_dim = short_term_size + input_dim; // the dimension of short term state + input
-        auto combined = stack({c, input}, "lstm_combined");
+        auto combined = concat(c, input, "lstm_combined");
         Linear lin1, lin2, lin3, lin4;
         if(make_params){
             // 创建参数
@@ -121,6 +127,6 @@ recurrent_op lstm_(size_t long_term_size, size_t short_term_size){
         auto o_t = sigmoid(lin4(combined), "lstm_o_t");
         auto h_new = h * f_t + i_t * g_t;
         auto c_new = o_t * tanh_activation(h_new, "lstm_c_new");
-        return concat({ h_new, c_new}, "lstm_hidden_output");
+        return concat(h_new,c_new, "lstm_hidden_output");
     };
 }

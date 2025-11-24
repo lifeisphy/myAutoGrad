@@ -34,7 +34,8 @@ private:
         if(type_ == parameter || type_ == intermediate){
             return true;
         }else if (type_== reference){
-            return ref[0]->has_grad(); // depend on referenced ptr
+            return any_of(ref.begin(), ref.end(), [](const VarPtr& v){ return v->has_grad(); });
+            // return ref[0]->has_grad(); // depend on referenced ptr
         }else{
             return false;
         }
@@ -160,10 +161,10 @@ private:
     Nodetype type() const { return type_; }
     size_t size() const { return data_.size(); }
     std::vector<size_t> shape() const { return shape_; }
-    bool require_all_gradients_ = true;
-    bool require_all_gradients() const {
-        return require_all_gradients_;
-    }
+    // bool require_all_gradients_ = true;
+    // bool require_all_gradients() const {
+    //     return require_all_gradients_;
+    // }
 
     // update the data using gradient and learning rate
     void update(double learning_rate)
@@ -266,11 +267,6 @@ private:
             for(int i=0; i< data_.size(); i++){
                 s += data_[i];
             }
-            // if( s > -1e-6 && s < 1e-6){
-            //     std::cout<<"Warning: Forward result is very small: " << s << std::endl;
-            //     std::cout<<"variable: " << name << ", op: " << operator_name << std::endl;
-            //     std::cout<<"shape:"; print_vec(std::cout, shape_); std::cout<<std::endl;
-            // }
 
         }
     }
@@ -278,7 +274,7 @@ private:
     // 累积梯度（不立即传播）
     void accumulate_gradient(const std::vector<double>& grad_input,bool accumulate = true) {
         if (!has_grad()) return;
-        std::cout<<"Accumulate gradient in "<< name <<std::endl;
+        // std::cout<<"Accumulate gradient in "<< name <<std::endl;
         // 累积梯度
         if(accumulate){
             for (size_t i = 0; i < grad_.size() && i < grad_input.size(); ++i) {
@@ -288,37 +284,28 @@ private:
             }
         }
 
-        if(require_all_gradients()){
-            // 检查是否所有父节点都已发送梯度
-            bool all_gradients_received = true;
-            for (const auto& edge : parents()) {
-                if (edge->parent && edge->parent->has_grad()) {
-                    // 如果父节点需要梯度，检查是否已经从该父节点接收到梯度
-                    if (edge->updated == false) {
-                        all_gradients_received = false;
-                        break;
-                    }
+        // 检查是否所有父节点都已发送梯度
+        bool all_gradients_received = true;
+        for (const auto& edge : parents()) {
+            if (edge->pass_grad && edge->parent->has_grad()) {
+                // 如果父节点需要梯度，检查是否已经从该父节点接收到梯度
+                if (edge->updated == false) {
+                    all_gradients_received = false;
+                    break;
                 }
-            }
-            // 如果所有梯度都已接收，执行反向传播
-            if (all_gradients_received) {
-                std::cout<<"All gradients received for "<< name <<", calling grad_fn."<<std::endl;
-                if (grad_fn_) {
-                    grad_fn_(grad_);
-                }
-            }else{
-                std::cout<<"Not all gradients received for "<< name <<", waiting..."<<std::endl;
-                for(auto& edge: parents()){
-                    if(edge->parent && edge->parent->has_grad()){
-                        std::cout<<"  Parent "<< edge->parent->name <<", updated="<< (edge->updated ? "true":"false") <<std::endl;
-                    }
-                }
-            }
-        }else {
-            if(grad_fn_) {
-                grad_fn_(grad_);
             }
         }
+        // 如果所有梯度都已接收，执行反向传播
+        if (all_gradients_received) {
+            // std::cout<<"All gradients received for "<< name <<", calling grad_fn."<<std::endl;
+            if (grad_fn_) {
+                grad_fn_(grad_);
+            }
+        }else{
+            // std::cout<<"Not all gradients received for "<< name <<", waiting..."<<std::endl;
+        }
+
+        // std::cout<<"return for "<<name<<std::endl;
     }
     /**
      * 反向传播计算梯度
@@ -328,7 +315,7 @@ private:
     {
         if (!has_grad())
             return;
-        std::cout<<"Bakward() in " << name <<std::endl;
+        // std::cout<<"Bakward() in " << name <<std::endl;
         // 如果是标量输出且没有指定梯度，设为1 (优化目标)
         if (grad_output.empty() && parents_.empty())
         {
@@ -371,7 +358,7 @@ private:
         for (auto &edge : children_)
         {
             edge->updated = false;
-            if (edge->child != nullptr)
+            if (edge->child->updated())
                 edge->child->zero_grad_recursive();
         }
     }
@@ -416,7 +403,6 @@ private:
                 throw std::runtime_error("Unknown variable type");
         }
         os<<"updated="<< (updated_ ? "true":"false") <<", ";
-        os<<"require_all_gradients="<< (require_all_gradients_ ? "true":"false") <<", ";
         if(verbose){
             os<< "data=";
             print_vec(os, data_);

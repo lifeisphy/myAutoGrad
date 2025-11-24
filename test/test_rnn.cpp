@@ -10,27 +10,27 @@ int main(){
     cout << "Max sequence length: " << dataset.get_sequence_length() << endl;
     // 创建模型
     cout<< "Building Sentiment LSTM model..." << endl;
-    SentimentLSTM model(10000,32, 3, 64, 1);
+    SentimentLSTM model(10000,32, dataset.get_sequence_length(), 64, 1);
     int epoch = 0;
     int i = 0;
     std::cout << "Epoch " << epoch + 1 << ", Sample " << i + 1 << "/" << dataset.size() << " String seq:";
     for (auto v: dataset.get_sequence(i)){
         std::cout << dataset.get_word(v) << " ";
     }
-    auto seq = dataset.get_sequence(i);
-    seq.resize(3);
-    int label = dataset.get_label(i);
-
+    // seq.resize(3);
+    
     for(int i = 0 ; i < 100; i++){
+        auto seq = dataset.get_sequence(i);
+        int label = dataset.get_label(i);
         // 前向传播
         cout<<"Forwarding: ";
         model.fit(seq, label);
         // 反向传播
         cout<<"Backwarding: ";
-        model.backward();
+        model.backward(seq.size()-1);
         model.update(0.01);   
         // 计算准确率
-        auto output = model.forward(seq);
+        // auto output = model.forward(seq);
 
     }
 }

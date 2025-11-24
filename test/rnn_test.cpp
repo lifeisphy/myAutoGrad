@@ -22,7 +22,8 @@ int main(){
     }
     std::cout << "  Output: " << op.outputs[0]->name << ", shape: ";
     print_vec(std::cout, op.outputs[0]->shape()); std::cout << std::endl;
-    auto graph = ComputationGraph::BuildFromOutput(op.outputs[0]);
+    auto graph = ComputationGraph::BuildFromOutput(op.outputs);
     graph.print_summary();
+    graph.Visualize("1.dot");
     return 0;
 }

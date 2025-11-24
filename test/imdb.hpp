@@ -131,10 +131,8 @@ public:
         std::fstream file;
         // list directory and read files
         std::cout<<"Reading files from: " << pos_path << std::endl;
-        int max = 10;
         for(auto file: std::filesystem::directory_iterator(pos_path)) {
-            if (max-- == 0) break;
-            // std::cout<< "Reading file: " << file.path() << std::endl;
+            std::cout<< "Reading file: " << file.path() << std::endl;
             std::ifstream ifs(file.path());
             if (!ifs.is_open()) continue;
             std::stringstream buffer;
@@ -238,7 +236,7 @@ class SentimentLSTM {
     public:
     RecurrentOperation* lstm_op_;
     VarPtr label;
-    VarPtr loss;
+    std::vector<VarPtr> losses;
     VarPtr real_output_node;
     ComputationGraph graph;
     std::vector<VarPtr> inputs, hiddens, outputs;
@@ -255,8 +253,10 @@ class SentimentLSTM {
         Linear embedding = Linear(vocab_size, embedding_dim, false);
         lstm_op_ = new RecurrentOperation(lstm_(long_term_size,short_term_size), hidden, input);
         lstm_op_->expand(max_expand, false, 
-        [hidden_dim, vocab_size, &classifier, &label](VarPtr v){
-            auto h_final = slice_indices(v, {idx_range(0, hidden_dim, 1)}, "final_hidden");
+        [hidden_dim, vocab_size, &classifier, &label](VarPtr hidden_output){
+            auto h_final = slice_indices(hidden_output, {idx_range(0, hidden_dim, 1)}, "final_hidden");
+            auto edge = hidden_output->parents()[0]; // edge relating h_final, hidden_output
+            edge->pass_grad = false; // stop gradient here for final hidden state
             auto logits = classifier(h_final);
             auto output = sigmoid(logits, "sentiment_output");
             return output;
@@ -269,12 +269,20 @@ class SentimentLSTM {
         inputs = lstm_op_->inputs;
         hiddens = lstm_op_->hidden;
         outputs = lstm_op_->outputs;
-        graph = ComputationGraph::BuildFromOutput(lstm_op_->outputs[max_expand-1]);
-
+        std::cout <<"output size:" << outputs.size() << "max expand:"<<max_expand<<std::endl;
+        assert(outputs.size() == max_expand);
+        // this->real_output_node = outputs[outputs.size()-1];
+        for(int i=0; i < max_expand; i++){
+            auto loss = mse_loss(outputs[i], label, "sentiment_loss_"+std::to_string(i));
+            losses.push_back(loss);
+            outputs.push_back(loss);
+        }
+        graph = ComputationGraph::BuildFromOutput(outputs);
     }
     double forward(const std::vector<int>& sequence){
         // real output node and loss changes according to sequence length
         this->real_output_node = outputs[sequence.size()-1];
+        // assert(sequence.size() == inputs.size());
         for(int i=0; i < sequence.size(); i++){
             std::vector<double> one_hot(vocab_size_, 0.0);
             if(i >= 0 && i < vocab_size_){
@@ -283,22 +291,20 @@ class SentimentLSTM {
 
             inputs[i]->set_input(one_hot);
         }
-        loss = mse_loss(outputs[sequence.size()-1], label, "sentiment_loss");
-        loss->calc();
-        std::cout<<"Loss: "<<loss->data()[0]<<std::endl;
+        losses[sequence.size()-1]->calc();
+        std::cout<<"Loss: "<<losses[sequence.size()-1]->data()[0]<<std::endl;
         auto output_data = this->real_output_node->data();
         return output_data[0];
     }
     void fit(const std::vector<int>& sequence, int label){
-        this->real_output_node = outputs[sequence.size()-1];
-        loss = mse_loss(this->real_output_node, this->label, "sentiment_loss");
+        // assert(sequence.size() == inputs.size());
         std::cout<<"Zero grad..."<<std::endl;
         std::flush(std::cout);
-        loss->zero_grad_recursive();
-        for(auto& out: outputs){
-            out->zero_grad_recursive();
+        for(auto& node: graph.output_nodes){
+            node->zero_grad_recursive();
         }
-        check();
+        // losses[losses.size()-1]->zero_grad_recursive();
+        // graph.Visualize("stat.dot");
         for(int i=0; i < sequence.size(); i++){
             std::vector<double> one_hot(vocab_size_, 0.0);
             if(i >= 0 && i < vocab_size_){
@@ -310,25 +316,25 @@ class SentimentLSTM {
         this->label->set_input({static_cast<double>(label)});
         std::cout<<"Calculating loss..."<<std::endl;
         std::flush(std::cout);
-        loss->calc();
-        std::cout<<"Loss: "<<loss->data()[0]<<std::endl;
+        losses[sequence.size()-1]->calc();
+        for(auto& edge: hiddens[sequence.size()]->parents()){
+            edge->pass_grad = false; // set this hidden node as stop node.
+        }
+        std::cout<<"Loss: "<<losses[sequence.size()-1]->data()[0]<<std::endl;
+        std::cout<<"Backwarding..."<<std::endl;
+        losses[sequence.size()-1]->backward();
+        // recover
+        for(auto& edge: hiddens[sequence.size()]->parents()){
+            if(edge->parent->name.find("final_hidden") == std::string::npos){
+                edge->pass_grad = true; // recover this hidden node, except those name starts with "final_hidden".
+                std::cout<<"Recover pass_grad for "<< edge->parent->name <<std::endl;
+            }else{
+                std::cout<<"Keep stop for "<< edge->parent->name <<std::endl;
+            }
+        }
     }
-    void check(){
-        for(auto &param : this->graph.parameter_nodes){
-            param->print(std::cout,false);
-        }
-        for(auto& hidden: this->hiddens){
-            hidden->print(std::cout,false);
-        }
-        for(auto &input : this->inputs){
-            input->print(std::cout,false);
-        }
-        for(auto &output : this->outputs){
-            output->print(std::cout,false);
-        }
-    }
-    void backward(){
-        loss->backward();
+    void backward(int idx){
+        
     }
     void update(double learning_rate){
         for(auto &param : this->graph.parameter_nodes){

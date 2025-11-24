@@ -31,7 +31,8 @@ struct Edge {
     VarPtr parent;
     VarPtr child;
     bool updated;
-    Edge(VarPtr parent, VarPtr child, bool updated) : parent(parent), child(child), updated(updated) {}
+    bool pass_grad = true; // whether to pass gradient to parent
+    Edge(VarPtr parent, VarPtr child, bool updated, bool pass_grad = true) : parent(parent), child(child), updated(updated), pass_grad(pass_grad) {}
 };
 #include "dataview.hpp"
 #include "utils.hpp"

@@ -58,14 +58,15 @@ class RecurrentOperation {
             hidden.push_back(h);
             h = hnext;
         }
+        hidden.push_back(hnext);
         // y_{n-1}=h_n
-        VarPtr out = output_transform_ ? output_transform_(hnext) : hnext;
-        outputs.push_back(out);
+        // VarPtr out = output_transform_ ? output_transform_(hnext) : hnext;
+        // outputs.push_back(out);
     }
 };
 recurrent_op linear_( bool use_bias=true){
     return [=](VarPtr hidden_state, VarPtr input, bool make_params, std::vector<VarPtr>& params) -> VarPtr {
-        hidden_state->require_all_gradients_ = false;
+        // hidden_state->require_all_gradients_ = false;
         auto in = stack({hidden_state, input}, "recurrent_combined");
         
         if(make_params){
@@ -94,7 +95,7 @@ recurrent_op linear_( bool use_bias=true){
 }
 recurrent_op lstm_(size_t long_term_size, size_t short_term_size){
     return [=](VarPtr hidden_state, VarPtr input, bool make_params, std::vector<VarPtr>& params) -> VarPtr {
-        hidden_state->require_all_gradients_ = false;
+        // hidden_state->require_all_gradients_ = false;
         size_t hidden_dim = hidden_state->size(); // hidden_state contains both h(long) and c(short)
         assert(hidden_dim == long_term_size + short_term_size);
         assert(long_term_size == short_term_size); // for simplicity, we require long and short term sizes to be equal
@@ -127,6 +128,7 @@ recurrent_op lstm_(size_t long_term_size, size_t short_term_size){
         auto o_t = sigmoid(lin4(combined), "lstm_o_t");
         auto h_new = h * f_t + i_t * g_t;
         auto c_new = o_t * tanh_activation(h_new, "lstm_c_new");
-        return concat(h_new,c_new, "lstm_hidden_output");
+        auto output =  concat(h_new,c_new, "lstm_hidden_output");
+        return output;
     };
 }

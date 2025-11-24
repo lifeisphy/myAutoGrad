@@ -11,6 +11,8 @@ std::string to_string(const Nodetype &type){
             return "parameter";
         case input:
             return "input";
+        case reference:
+            return "reference";
         default:
             return "unknown";
     }

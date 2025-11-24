@@ -1,6 +1,16 @@
 #include "imdb.hpp"
+#include <csignal>
 using namespace std;
-int main() {
+SentimentLSTM* pmodel;
+std::string filename = "out/imdb_model_params.txt";
+void sigint_handler(int sig) {
+    cout << "Interrupt signal (" << sig << ") received. Saving to " << filename << " and exiting..." << endl;
+    pmodel->graph.SaveParams(filename);
+    exit(0);
+}
+
+int main(int argc, char* argv[]) {
+    signal(SIGINT, sigint_handler);
     // 加载数据集
     IMDBDataset dataset(10000, 200);  // 10k词汇表，200序列长度
     cout<< "Loading IMDB dataset..." << endl;
@@ -17,23 +27,19 @@ int main() {
 
     // 创建模型
     cout<< "Building Sentiment LSTM model..." << endl;
-    //  200
-    SentimentLSTM model(dataset.get_vocab_size(), 32, dataset.get_sequence_length(), 128, 1);
-    auto graph = ComputationGraph::BuildFromOutput(model.lstm_op_->outputs[dataset.get_sequence_length()-1]);
-    // graph.print_summary();
-    // exit(0);
+    pmodel = new SentimentLSTM(dataset.get_vocab_size(), 32, dataset.get_sequence_length(), 128, 1);
+    if(argc == 2 && std::string(argv[1]) == "load"){
+        pmodel->graph.LoadParams("out/imdb_model_params.txt");
+        cout<<"Model parameters loaded from out/imdb_model_params.txt"<<endl;
+    }
     // 训练参数
-    const double learning_rate = 0.001;
-    const int epochs = 5;
-    // const int batch_size = 32;
-    
+    const double learning_rate = 0.01;
+    const int epochs = 1;
     std::cout << "Starting training..." << std::endl;
     auto adam = AdamOptimizer(learning_rate);
     for (int epoch = 0; epoch < epochs; epoch++) {
         double epoch_loss = 0.0;
         int correct_predictions = 0;
-        // int num_batches = dataset.size() / batch_size;
-
         for (int i = 0; i < dataset.size(); i++) {
             std::cout << "Epoch " << epoch + 1 << ", Sample " << i + 1 << "/" << dataset.size() << " String seq:";
             for (auto v: dataset.get_sequence(i)){
@@ -41,30 +47,26 @@ int main() {
             }
             cout << "\r";
             std::flush(cout);
-            int idx =  i;
-            if (idx >= dataset.size()) break;
             
             // 准备标签
-            int label = dataset.get_label(idx);
-            // std::vector<double> seq = dataset.get_sequence(idx);
-            // 前向传播
-            cout<<"Forwarding: ";
+            int label = dataset.get_label(i);
+            std::vector<int> seq = dataset.get_sequence(i);
+
+            cout<<"Fitting: ";
             flush(cout);
-            model.fit(dataset.get_sequence(idx), label);
-            
-            // 反向传播
-            cout<<"Backwarding: ";
-            flush(cout);
-            model.backward();
-            
-            epoch_loss += model.real_output_node->grad()[0];
-            
+            pmodel->fit(seq, label);
+            cout<<"Updating: ";
+            pmodel->update(learning_rate);
+            // pmodel->backward(seq.size()-1);
+            double loss = pmodel->losses[seq.size()-1]->data()[0];
+            epoch_loss += loss;
+            cout<<"loss: "<<loss<<endl;
             // 计算准确率
-            auto output = model.forward(dataset.get_sequence(idx));
-            int predicted = (output > 0.5) ? 1 : 0;
-            if (predicted == dataset.get_label(idx)) {
-                correct_predictions++;
-            }
+            // auto output = pmodel->forward(dataset.get_sequence(idx));
+            // int predicted = (output > 0.5) ? 1 : 0;
+            // if (predicted == dataset.get_label(idx)) {
+            //     correct_predictions++;
+            // }
         }
         
         epoch_loss /= dataset.size();

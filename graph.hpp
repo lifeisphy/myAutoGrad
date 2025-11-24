@@ -21,12 +21,15 @@ class ComputationGraph {
           parameter_nodes(std::move(parameters)),
           intermediate_nodes(std::move(intermediates)),
           output_nodes(std::move(outputs)) {}
-    static ComputationGraph BuildFromOutput(VarPtr output_node){
+
+    static ComputationGraph BuildFromOutput(const std::vector<VarPtr>& output_nodes){
         ComputationGraph graph;
         std::vector<VarPtr> stack;
         std::unordered_set<VarPtr> visited;
-        graph.output_nodes.push_back(output_node);
-        stack.push_back(output_node);
+        for (const auto& output_node : output_nodes) {
+            graph.output_nodes.push_back(output_node);
+            stack.push_back(output_node);
+        }
         while(!stack.empty()){
             VarPtr current = stack.back();
             stack.pop_back();
@@ -57,6 +60,9 @@ class ComputationGraph {
             }
         }
         return graph;
+    }
+    static ComputationGraph BuildFromOutput(const VarPtr& output_node){
+        return BuildFromOutput(std::vector<VarPtr>{output_node});
     }
     static std::vector<VarPtr> toposort(ComputationGraph &graph){
         std::vector<VarPtr> sorted_nodes;
@@ -167,6 +173,55 @@ class ComputationGraph {
         for(auto & node: sorted){
             node->print(ofs,false);
         }
+    }
+    void Visualize(string filename){
+        auto add_entry = [](string key, string value,string key_bgcolor="white", string val_bgcolor="white"){
+            return "\t\t<TR><TD bgcolor=\"" + key_bgcolor + "\">" + key + "</TD><TD bgcolor=\"" + val_bgcolor + "\">" + value + "</TD></TR>\n";
+        };
+
+        
+        std::ofstream ofs(filename);
+        ofs << "digraph ComputationGraph {" << std::endl;
+        std::vector<VarPtr> sorted = toposort(*this);
+        for(auto & node: sorted){
+            ofs << "  \"" << node->name << "\" [label=<<TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\">"<< std::endl;
+            
+            ofs << add_entry("Name", node->name);
+            ofs << add_entry("Type", to_string(node->type())) ;
+            std::stringstream shape_ss;
+            ofs << add_entry("Operator", node->operator_name);
+            print_vec(shape_ss, node->shape(), "[", ",", "]");
+            ofs << add_entry("Shape", shape_ss.str()) ;
+            ofs << add_entry("Updated", node->updated() ? "true":"false",
+                "white", node->updated() ? "lightgreen":"lightcoral");
+            ofs << add_entry("Has_grad", node->has_grad() ? "true":"false",
+                "white", node->has_grad() ? "lightgreen":"lightcoral");
+            
+            // ofs << add_entry("Req_all_grad", node->require_all_gradients() ? "true":"false",
+            //     "white", node->require_all_gradients() ? "lightgreen":"lightcoral");
+            std::string color;
+            switch(node->type()){
+                case input: color = "lightblue"; break;
+                case parameter: color = "lightgreen"; break;
+                case intermediate: color = "orange"; break;
+                case reference: color = "yellow"; break;
+
+                default: color = "white"; break;
+            }
+            if (std::find(output_nodes.begin(), output_nodes.end(), node) != output_nodes.end()){
+                    color = "red";
+            }
+            ofs << "\t</TABLE>\n\t> fillcolor="<< color << " style="<< "filled" << " ];" << std::endl <<std::endl;
+        }
+        for(auto & node: sorted){
+            for(auto & edge: node->parents()){
+                if(edge->parent){
+                    ofs << "  \"" << node->name << "\" -> \"" << edge->parent->name << "\" [label=\""<< "pass_grad:" << edge->pass_grad << "updated:" << edge->updated<<"\"];" << std::endl;
+                }
+            }
+        }
+        ofs << "}" << std::endl;
+        std::cout<<"Computation graph visualization saved to "<< filename << std::endl;
     }
     int epochs = 0;
     int epoch = 0;

@@ -1,0 +1,125 @@
+digraph ComputationGraph {
+  "param" [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0">
+		<TR><TD bgcolor="white">Name</TD><TD bgcolor="white">param</TD></TR>
+		<TR><TD bgcolor="white">Type</TD><TD bgcolor="white">parameter</TD></TR>
+		<TR><TD bgcolor="white">Operator</TD><TD bgcolor="white"></TD></TR>
+		<TR><TD bgcolor="white">Shape</TD><TD bgcolor="white">[1]</TD></TR>
+		<TR><TD bgcolor="white">Updated</TD><TD bgcolor="lightcoral">false</TD></TR>
+		<TR><TD bgcolor="white">Has_grad</TD><TD bgcolor="lightgreen">true</TD></TR>
+	</TABLE>
+	> fillcolor=lightgreen style=filled ];
+
+  "param1" [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0">
+		<TR><TD bgcolor="white">Name</TD><TD bgcolor="white">param1</TD></TR>
+		<TR><TD bgcolor="white">Type</TD><TD bgcolor="white">parameter</TD></TR>
+		<TR><TD bgcolor="white">Operator</TD><TD bgcolor="white"></TD></TR>
+		<TR><TD bgcolor="white">Shape</TD><TD bgcolor="white">[1]</TD></TR>
+		<TR><TD bgcolor="white">Updated</TD><TD bgcolor="lightcoral">false</TD></TR>
+		<TR><TD bgcolor="white">Has_grad</TD><TD bgcolor="lightgreen">true</TD></TR>
+	</TABLE>
+	> fillcolor=lightgreen style=filled ];
+
+  "param2" [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0">
+		<TR><TD bgcolor="white">Name</TD><TD bgcolor="white">param2</TD></TR>
+		<TR><TD bgcolor="white">Type</TD><TD bgcolor="white">parameter</TD></TR>
+		<TR><TD bgcolor="white">Operator</TD><TD bgcolor="white"></TD></TR>
+		<TR><TD bgcolor="white">Shape</TD><TD bgcolor="white">[1]</TD></TR>
+		<TR><TD bgcolor="white">Updated</TD><TD bgcolor="lightcoral">false</TD></TR>
+		<TR><TD bgcolor="white">Has_grad</TD><TD bgcolor="lightgreen">true</TD></TR>
+	</TABLE>
+	> fillcolor=lightgreen style=filled ];
+
+  "input" [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0">
+		<TR><TD bgcolor="white">Name</TD><TD bgcolor="white">input</TD></TR>
+		<TR><TD bgcolor="white">Type</TD><TD bgcolor="white">input</TD></TR>
+		<TR><TD bgcolor="white">Operator</TD><TD bgcolor="white"></TD></TR>
+		<TR><TD bgcolor="white">Shape</TD><TD bgcolor="white">[1]</TD></TR>
+		<TR><TD bgcolor="white">Updated</TD><TD bgcolor="lightcoral">false</TD></TR>
+		<TR><TD bgcolor="white">Has_grad</TD><TD bgcolor="lightcoral">false</TD></TR>
+	</TABLE>
+	> fillcolor=lightblue style=filled ];
+
+  "var3" [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0">
+		<TR><TD bgcolor="white">Name</TD><TD bgcolor="white">var3</TD></TR>
+		<TR><TD bgcolor="white">Type</TD><TD bgcolor="white">intermediate</TD></TR>
+		<TR><TD bgcolor="white">Operator</TD><TD bgcolor="white">mul_elementwise</TD></TR>
+		<TR><TD bgcolor="white">Shape</TD><TD bgcolor="white">[1]</TD></TR>
+		<TR><TD bgcolor="white">Updated</TD><TD bgcolor="lightcoral">false</TD></TR>
+		<TR><TD bgcolor="white">Has_grad</TD><TD bgcolor="lightgreen">true</TD></TR>
+	</TABLE>
+	> fillcolor=orange style=filled ];
+
+  "var4" [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0">
+		<TR><TD bgcolor="white">Name</TD><TD bgcolor="white">var4</TD></TR>
+		<TR><TD bgcolor="white">Type</TD><TD bgcolor="white">intermediate</TD></TR>
+		<TR><TD bgcolor="white">Operator</TD><TD bgcolor="white">add</TD></TR>
+		<TR><TD bgcolor="white">Shape</TD><TD bgcolor="white">[1]</TD></TR>
+		<TR><TD bgcolor="white">Updated</TD><TD bgcolor="lightcoral">false</TD></TR>
+		<TR><TD bgcolor="white">Has_grad</TD><TD bgcolor="lightgreen">true</TD></TR>
+	</TABLE>
+	> fillcolor=orange style=filled ];
+
+  "var5" [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0">
+		<TR><TD bgcolor="white">Name</TD><TD bgcolor="white">var5</TD></TR>
+		<TR><TD bgcolor="white">Type</TD><TD bgcolor="white">intermediate</TD></TR>
+		<TR><TD bgcolor="white">Operator</TD><TD bgcolor="white">Sigmoid</TD></TR>
+		<TR><TD bgcolor="white">Shape</TD><TD bgcolor="white">[1]</TD></TR>
+		<TR><TD bgcolor="white">Updated</TD><TD bgcolor="lightcoral">false</TD></TR>
+		<TR><TD bgcolor="white">Has_grad</TD><TD bgcolor="lightgreen">true</TD></TR>
+	</TABLE>
+	> fillcolor=orange style=filled ];
+
+  "var" [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0">
+		<TR><TD bgcolor="white">Name</TD><TD bgcolor="white">var</TD></TR>
+		<TR><TD bgcolor="white">Type</TD><TD bgcolor="white">intermediate</TD></TR>
+		<TR><TD bgcolor="white">Operator</TD><TD bgcolor="white">mul_elementwise</TD></TR>
+		<TR><TD bgcolor="white">Shape</TD><TD bgcolor="white">[1]</TD></TR>
+		<TR><TD bgcolor="white">Updated</TD><TD bgcolor="lightcoral">false</TD></TR>
+		<TR><TD bgcolor="white">Has_grad</TD><TD bgcolor="lightgreen">true</TD></TR>
+	</TABLE>
+	> fillcolor=orange style=filled ];
+
+  "var1" [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0">
+		<TR><TD bgcolor="white">Name</TD><TD bgcolor="white">var1</TD></TR>
+		<TR><TD bgcolor="white">Type</TD><TD bgcolor="white">intermediate</TD></TR>
+		<TR><TD bgcolor="white">Operator</TD><TD bgcolor="white">add</TD></TR>
+		<TR><TD bgcolor="white">Shape</TD><TD bgcolor="white">[1]</TD></TR>
+		<TR><TD bgcolor="white">Updated</TD><TD bgcolor="lightcoral">false</TD></TR>
+		<TR><TD bgcolor="white">Has_grad</TD><TD bgcolor="lightgreen">true</TD></TR>
+	</TABLE>
+	> fillcolor=orange style=filled ];
+
+  "var2" [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0">
+		<TR><TD bgcolor="white">Name</TD><TD bgcolor="white">var2</TD></TR>
+		<TR><TD bgcolor="white">Type</TD><TD bgcolor="white">intermediate</TD></TR>
+		<TR><TD bgcolor="white">Operator</TD><TD bgcolor="white">ReLU</TD></TR>
+		<TR><TD bgcolor="white">Shape</TD><TD bgcolor="white">[1]</TD></TR>
+		<TR><TD bgcolor="white">Updated</TD><TD bgcolor="lightcoral">false</TD></TR>
+		<TR><TD bgcolor="white">Has_grad</TD><TD bgcolor="lightgreen">true</TD></TR>
+	</TABLE>
+	> fillcolor=orange style=filled ];
+
+  "var6" [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0">
+		<TR><TD bgcolor="white">Name</TD><TD bgcolor="white">var6</TD></TR>
+		<TR><TD bgcolor="white">Type</TD><TD bgcolor="white">intermediate</TD></TR>
+		<TR><TD bgcolor="white">Operator</TD><TD bgcolor="white">add</TD></TR>
+		<TR><TD bgcolor="white">Shape</TD><TD bgcolor="white">[1]</TD></TR>
+		<TR><TD bgcolor="white">Updated</TD><TD bgcolor="lightcoral">false</TD></TR>
+		<TR><TD bgcolor="white">Has_grad</TD><TD bgcolor="lightgreen">true</TD></TR>
+	</TABLE>
+	> fillcolor=orange style=filled ];
+
+  "param" -> "var" [label="pass_grad:1updated:0"];
+  "param1" -> "var3" [label="pass_grad:1updated:0"];
+  "param2" -> "var1" [label="pass_grad:1updated:0"];
+  "param2" -> "var4" [label="pass_grad:1updated:0"];
+  "input" -> "var" [label="pass_grad:1updated:0"];
+  "input" -> "var3" [label="pass_grad:1updated:0"];
+  "var3" -> "var4" [label="pass_grad:1updated:0"];
+  "var4" -> "var5" [label="pass_grad:1updated:0"];
+  "var5" -> "var6" [label="pass_grad:1updated:0"];
+  "var" -> "var1" [label="pass_grad:1updated:0"];
+  "var1" -> "var2" [label="pass_grad:1updated:0"];
+  "var2" -> "var6" [label="pass_grad:1updated:0"];
+  "var6" -> "var8" [label="pass_grad:1updated:0"];
+}

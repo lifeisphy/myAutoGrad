@@ -50,7 +50,6 @@ MyAutoGrad 是一个用 C++ 实现的高性能自动微分框架，支持构建�
 └── docs/              # 文档目录
     ├── overview.md    # 本文档
     ├── api/           # API 文档
-    ├── tutorials/     # 教程
     └── examples/      # 示例代码
 ```
 
@@ -108,7 +107,6 @@ int main() {
 ## 文档导航
 
 - [API 参考](api/README.md) - 详细的 API 文档
-- [教程](docs/tutorials/README.md) - 从入门到高级的教程
 - [示例](examples/README.md) - 实际应用示例
 - [架构设计](architecture.md) - 框架内部设计说明
 

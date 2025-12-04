@@ -11,11 +11,35 @@
 
 std::string outfile_interrupt = "out/mnist_model_params_interrupt.txt";
 std::string savefilename = "out/mnist_model_params.txt";
+std::string wrong_preds_file = "out/mnist_wrong_preds_interrupt.txt";
+bool loadparams = false;
+bool validate_ = false;
+bool train_ = false;
+
+struct wrong_pred {
+    int idx;
+    int wrong_number;
+    int real_number;
+    std::vector<double> pred_probs;
+};
+std::vector<wrong_pred> wrong_preds;
 ComputationGraph* pgraph = nullptr; // Global pointer to the computation graph
 void signal_handler(int signal){
     if(signal == SIGINT){
-        std::cout << "\nInterrupted by user." << std::endl <<"saving to " << outfile_interrupt << std::endl;
-        pgraph->SaveParams(outfile_interrupt);
+        if(validate_){
+            std::cout << "\nInterrupted by user." << std::endl ;
+            std::cout<<"Saving wrong predictions to " << wrong_preds_file << std::endl;
+            std::ofstream wrong_file(wrong_preds_file);
+            wrong_file << "Index,Predicted,Real,Probabilities\n";
+            for(size_t i=0; i< wrong_preds.size(); i++){
+                wrong_file << wrong_preds[i].idx << "," << wrong_preds[i].wrong_number << "," << wrong_preds[i].real_number << ",";
+                print_vec(wrong_file, wrong_preds[i].pred_probs);
+                wrong_file << "\n";
+            }
+        }else if(train_){
+            std::cout << "\nInterrupted by user." << std::endl <<"saving to " << outfile_interrupt << std::endl;
+            pgraph->SaveParams(outfile_interrupt);
+        }
         exit(0);
     }
     if(signal == SIGQUIT){
@@ -267,20 +291,20 @@ void train(){
 int main(int argc, char* argv[]) {
 
     std::cout << "=== MNIST CNN Training in C++ ===" << std::endl;
-    
+
     // 加载数据
-    if (!dataset.load_csv("testcases/digit-recognizer/train.csv")) {
+    auto res = dataset.load_csv("testcases/mnist/Kaggle-Digit-Recognizer-master/train.csv");
+    // auto res = dataset.load_csv("testcases/digit-recognizer/train.csv");
+    if (!res) {
         return -1;
     }
 
     build_network();
 
     
-    bool loadparams = false;
-    bool validate_ = false;
-    bool train_ = false;
+
     if (argc == 1){
-        std::cout << "Usage: " << argv[0] << " load <model_params_file> validate <true/false>" << std::endl;
+        std::cout << "Usage: " << argv[0] << " load <model_params_file> validate|train" << std::endl;
     }
     for(int i=1; i < argc; ){
         auto cmd = std::string(argv[i]);
@@ -301,12 +325,14 @@ int main(int argc, char* argv[]) {
             exit(1);
         }
     }
+    signal(SIGINT, signal_handler); // 注册信号处理函数
+    signal(SIGQUIT, signal_handler);
     if(train_){
         std::cout << "Starting training..." << std::endl;
-        signal(SIGINT, signal_handler); // 注册信号处理函数
-        signal(SIGQUIT, signal_handler);
         train();
     }else if(validate_){
+
+        std::cout << "Starting validation..." << std::endl;
         if(!loadparams){
             std::cout << "Please load model parameters before validation." << std::endl;
             return -1;
@@ -317,10 +343,14 @@ int main(int argc, char* argv[]) {
         int correct_predictions = 0;
         for(int i=0; i< dataset.size(); i++){
             // pgraph->i = i;
-            pgraph->output_nodes[0]->zero_grad_recursive();
+            output->zero_grad_recursive();
             x->set_input( dataset.get_image(i));
-            output->calc();
+            output->calc(); 
             auto predictions = output->data();
+            std::vector<double> probs;
+            for(int i=0; i< predictions.size(); i++){
+                probs.push_back(predictions[i]);
+            }
             int predicted_class = 0;
             double max_prob = predictions[0];
             for (int j = 1; j < n_output; j++) {
@@ -334,6 +364,14 @@ int main(int argc, char* argv[]) {
             results.push_back(result);
             if(result)
                 correct_predictions +=1;
+            else{
+                wrong_pred wp;
+                wp.idx = i;
+                wp.wrong_number = predicted_class;
+                wp.real_number = real;
+                wp.pred_probs = probs;
+                wrong_preds.push_back(wp);
+            }
             std::cout<<"i: " << i ;
             std::cout<<"pred: "<< predicted_class << " real: " << real << (result? "✔️":"❌");
             std::cout<<std::setprecision(6);

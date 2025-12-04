@@ -7,3 +7,5 @@ build/
 testcases/
 cuda/
 out/
+*.dot
+*.txt

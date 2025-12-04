@@ -1,147 +1,137 @@
-# MyAutoGrad - C++ 自动微分框架
+# MyAutoGrad - C++ Automatic Differentiation Framework
 
 [![C++23](https://img.shields.io/badge/C%2B%2B-23-blue.svg)](https://en.wikipedia.org/wiki/C%2B%2B23)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Documentation](https://img.shields.io/badge/Documentation-latest-brightgreen.svg)](docs/)
 
-一个用 C++ 实现的高性能自动微分框架，支持构建和训练深度神经网络。该框架实现了完整的反向传播算法，支持标量、向量和多维张量的自动微分计算。
+A high-performance automatic differentiation framework implemented in C++, supporting the construction and training of deep neural networks. This framework implements a complete backpropagation algorithm and supports automatic differentiation for scalars, vectors, and multi-dimensional tensors.
 
-> **注意**: 本项目基于 AI 生成的代码并进行修改，请谨慎使用。
+> **Note**: This project is based on AI-generated code with modifications. Please use with caution.
 
-## ✨ 主要特性
+## ✨ Key Features
 
-### 🧠 核心功能
+### 🧠 Core Functionality
 
-- **Variable 类**: 支持自动微分的核心数据结构
-- **计算图管理**: 自动构建和管理计算图
-- **反向传播**: 高效的梯度计算和传播
-- **内存管理**: 使用智能指针和 DataView 实现高效的内存管理
+- **Variable Class**: Core data structure supporting automatic differentiation
+- **Computation Graph Management**: Automatic construction and management of computation graphs
+- **Backpropagation**: Efficient gradient computation and propagation
+- **Memory Management**: High-efficiency memory management using smart pointers and DataView
 
-### 🔧 支持的操作
+### 🔧 Supported Operations
 
-- **基础数学运算**: 加法、减法、乘法、除法、幂运算等
-- **激活函数**: ReLU、Sigmoid、Tanh、Leaky ReLU
-- **损失函数**: 均方误差(MSE)、二元交叉熵(BCE)
-- **张量操作**: 卷积、池化、切片、拼接、展平等
-- **向量运算**: 支持向量运算和广播
+- **Basic Math Operations**: Addition, subtraction, multiplication, division, power operations, etc.
+- **Activation Functions**: ReLU, Sigmoid, Tanh, Leaky ReLU
+- **Loss Functions**: Mean Squared Error (MSE), Binary Cross-Entropy (BCE)
+- **Tensor Operations**: Convolution, pooling, slicing, concatenation, flattening, etc.
+- **Vector Operations**: Support for vector operations and broadcasting
 
-### 🚀 高级特性
+### 🚀 Advanced Features
 
-- **循环神经网络**: 支持 RNN 和 LSTM 结构
-- **优化器**: Adam 优化器
-- **可视化**: 计算图可视化功能
-- **参数保存/加载**: 模型参数的持久化
-- **Python 绑定**: 通过 cppyy 支持 Python 调用
+- **Recurrent Neural Networks**: Support for RNN and LSTM architectures
+- **Optimizer**: Adam optimizer
+- **Visualization**: Computation graph visualization functionality
+- **Parameter Saving/Loading**: Model parameter persistence
+- **Python Bindings**: Python interface through cppyy
 
-## 📁 项目结构
+## 📁 Project Structure
 
 ```{text}
-├── autograd.hpp        # 主框架头文件
-├── variable.hpp        # Variable 类定义
-├── operations.hpp      # 数学运算实现
-├── graph.hpp          # 计算图管理
-├── optimizer.hpp      # 优化器实现
-├── dataview.hpp       # 数据视图类
-├── utils.hpp          # 工具函数
-├── recurrent.hpp      # 循环神经网络支持
-├── Makefile           # 编译脚本
-├── requirements.txt   # Python 依赖
-├── test/              # 测试和示例
-│   ├── demo.cpp       # 基础演示
-│   ├── test.cpp       # 单元测试
-│   ├── mnist.cpp      # MNIST 手写数字识别
-│   └── ...            # 其他测试文件
-└── docs/              # 文档目录
-    ├── overview.md    # 概述文档
-    ├── api/           # API 文档
-    ├── examples/      # 示例代码
-    └── architecture.md # 架构设计
+├── autograd.hpp        # Main framework header file
+├── variable.hpp        # Variable class definition
+├── operations.hpp      # Mathematical operations implementation
+├── graph.hpp          # Computation graph management
+├── optimizer.hpp      # Optimizer implementation
+├── dataview.hpp       # DataView class
+├── utils.hpp          # Utility functions
+├── recurrent.hpp      # Recurrent neural network support
+├── run.py             # Build script
+├── requirements.txt   # Python dependencies
+├── test/              # Tests and examples
+│   ├── demo.cpp       # Basic demonstration
+│   ├── test.cpp       # Unit tests
+│   ├── mnist.cpp      # MNIST handwritten digit recognition
+│   └── ...            # Other test files
+└── docs/              # Documentation directory
+    ├── overview.md    # Overview documentation
+    ├── api/           # API documentation
+    ├── examples/      # Example code
+    └── architecture.md # Architecture design
 ```
 
-## 🚀 快速开始
+## 🚀 Quick Start
 
-### 编译要求
+### Build Requirements
 
-- C++23 兼容的编译器 (推荐 GCC 13+ 或 Clang 16+)
-- Make 工具
-- Python 3.8+ (可选，用于 Python 绑定)
+- C++23 compatible compiler (recommended GCC 13+ or Clang 16+)
+- Python 3.8+ (for running [run.py](./run.py), optional for Python bindings)
 
-### 安装依赖
+### Install Dependencies
 
+You may work with python and use c++ part as a standalone library. You can also use the provided `run.py` script to build and run the C++ programs.
 ```bash
-# 安装 Python 依赖（可选）
+# Install Python dependencies (optional)
 pip install -r requirements.txt
 ```
 
-### 编译和运行
+### Build and Run
 
+Currently only mnist project is supported in run.py. You can also directly compile and run the C++ files in the `test/` directory.
 ```bash
-# 编译所有程序
-make all
-
-# 运行基础演示
-make run
-
-# 运行测试程序
-make test
-
-# 清理生成的文件
-make clean
-
-# 查看帮助
-make help
+python run.py [download|compile|train|validate] <project_name>
+# Example: Download MNIST dataset
+python run.py download mnist
 ```
 
-### 简单示例
+### Simple Example
 
 ```cpp
 #include "autograd.hpp"
 
 int main() {
-    // 创建变量
+    // Create variables
     auto x = make_param(2.0);
     auto w = make_param(3.0);
     auto b = make_param(1.0);
     
-    // 构建计算图: y = w * x + b
+    // Build computation graph: y = w * x + b
     auto y = add(mul(w, x), b);
     
-    // 前向计算
+    // Forward computation
     y->calc();
-    std::cout << "y = " << y->item() << std::endl;  // 输出: y = 7
+    std::cout << "y = " << y->item() << std::endl;  // Output: y = 7
     
-    // 反向传播
+    // Backpropagation
     y->backward();
-    std::cout << "dw = " << w->grad_item() << std::endl;  // 输出: dw = 2
-    std::cout << "dx = " << x->grad_item() << std::endl;  // 输出: dx = 3
+    std::cout << "dw = " << w->grad_item() << std::endl;  // Output: dw = 2
+    std::cout << "dx = " << x->grad_item() << std::endl;  // Output: dx = 3
     
     return 0;
 }
 ```
 
-## 📚 文档
+## 📚 Documentation
 
-- [📖 概述](docs/overview.md) - 框架介绍和快速开始
-- [🔧 API 参考](docs/api/README.md) - 详细的 API 文档
-- [💡 示例](docs/examples/README.md) - 实际应用示例
-- [🏗️ 架构设计](docs/architecture.md) - 框架内部设计说明
+- [📖 Overview](docs/overview.md) - Framework introduction and quick start
+- [🔧 API Reference](docs/api/README.md) - Detailed API documentation
+- [💡 Examples](docs/examples/README.md) - Practical application examples
+- [🏗️ Architecture Design](docs/architecture.md) - Framework internal design documentation
 
-## 🎯 使用示例
+## 🎯 Usage Examples
 
-### 线性回归
+### Linear Regression
 
 ```cpp
-// 创建变量
+// Create variables
 auto x = make_input(0.0);
 auto w = make_param(0.1);
 auto b = make_param(0.1);
 auto target = make_input(0.0);
 
-// 构建模型
+// Build model
 auto y_pred = add(mul(w, x), b);
 auto loss = mse_loss(y_pred, target);
 
-// 训练循环
+// Training loop
 for (int epoch = 0; epoch < 100; ++epoch) {
     x->set_input(training_data[epoch]);
     target->set_input(labels[epoch]);
@@ -155,109 +145,121 @@ for (int epoch = 0; epoch < 100; ++epoch) {
 }
 ```
 
-### 神经网络
+### Computation Graph
 
 ```cpp
-// 多层感知机
+make_input(x, init_zeros(input_size), {input_size});
+make_input(label, init_zeros(output_size), {output_size});
+make_param(b, init_weights(output_size), {output_size});
+make_param(W, init_weights(input_size * output_size) , {input_size, output_size});
+output = add(mul(W, x, 0, 0), b);
+loss = mse_loss(output, label,"loss");
+// MSE_LOSS(loss,output,label); the corresponding macro, same functionality but helps to set the name of new node with the variable name 'loss'
+auto graph = ComputationGraph::BuildFromOutput(loss); // graph construction from the final output node
+// graph->visualize("computation_graph.dot"); // visualize the computation graph to a dot file
+graph.toposort(); // returns a list of topological sort on the computation graph
+graph.input_nodes; // list of all input nodes
+graph.param_nodes; // list of all parameter nodes
+graph.output_nodes; // the output nodes
+// ...
+graph.Visualize("computation_graph.dot"); // visualize the computation graph to a dot file
+
+graph.LoadParams("1.txt"); // load model parameters from file
+graph.fit([](ComputationGraph* pgraph){/* load training data for each sample here...*/}, 100, 1000, 0.01) // train the model with 100 epochs, 1000 samples, learning rate 0.01
+graph.SaveParams("1.txt"); // save model parameters to file
+```
+
+
+### Neural Network
+
+```cpp
+// Multi-layer perceptron
 auto W1 = make_param(vec_r(input_size * hidden_size), {hidden_size, input_size});
 auto b1 = make_param(vec_r(hidden_size), {hidden_size});
 auto W2 = make_param(vec_r(hidden_size * output_size), {output_size, hidden_size});
 auto b2 = make_param(vec_r(output_size), {output_size});
 
-// 前向传播
+// Forward propagation
 auto z1 = add(mul(W1, x, 0, 0), b1);
 auto a1 = relu(z1);
 auto z2 = add(mul(W2, a1, 0, 0), b2);
 auto output = z2;
 ```
 
-### 卷积神经网络
+### Convolutional Neural Network
 
 ```cpp
-// 卷积层
+// Convolution layer
 auto conv_weights = make_param(vec_r(3 * 3 * 32), {3, 3, 32});
 auto conv_out = conv2d(input, conv_weights);
 auto relu_out = relu(conv_out);
 auto pool_out = MaxPooling(relu_out, 2);
 ```
 
-### 循环神经网络
+### Recurrent Neural Network
 
 ```cpp
 // LSTM
-auto lstm_op = lstm_(hidden_size, hidden_size);
-auto lstm = RecurrentOperation(lstm_op, hidden_state, input);
-lstm.expand(seq_length);
+auto lstm = RecurrentOperation(lstm_(long_term_size, short_term_size), hidden_state, input); // Create LSTM operation
+lstm.expand(seq_length,false, [hidden_dim](VarPtr v){
+    return Linear(hidden_dim, 10,false)(v);
+}); // expand the LSTM for the given sequence length, false means only 1 output, the output_transform function defines the operation to perform on hidden layer to get each output.
 auto outputs = lstm.outputs;
+auto graph = ComputationGraph::BuildFromOutput(lstm.outputs); // Build computation graph from the outputs
 ```
 
-## 🔄 最近更新
+## 🔄 Recent Updates
 
-根据 git 记录，最近的重大更新包括：
+Recent major updates include:
 
-- **🔄 RNN 网络支持**: 添加了循环神经网络和 LSTM 支持
-- **📊 可视化功能**: 新增计算图可视化功能
-- **⚡ Adam 优化器**: 实现了 Adam 优化算法
-- **💾 参数保存/加载**: 支持模型参数的持久化
-- **🐍 Python 绑定**: 通过 cppyy 提供 Python 接口
-- **🔧 高级张量操作**: 卷积、池化、切片等操作
+- **🔄 RNN Support**: Added recurrent neural networks and LSTM support
+- **📊 Visualization**: New computation graph visualization functionality
+- **⚡ Adam Optimizer**: Implemented Adam optimization algorithm
+- **💾 Parameter Saving/Loading**: Support for model parameter persistence
+- **🐍 Python Bindings**: Python interface through cppyy
+- **🔧 Advanced Tensor Operations**: Convolution, pooling, slicing, and other operations
 
-## 🧪 测试
+## 🤝 Contributing
 
-项目包含全面的测试套件：
+Issues and pull requests are welcome to improve this project!
 
-```bash
-# 运行基础测试
-./autograd_test
+### Development Guide
 
-# 运行 MNIST 示例
-./mnist train
+1. Fork this repository
+2. Create a feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a pull request
 
-# 运行演示程序
-./autograd_demo
-```
+## 📄 License
 
-## 🤝 贡献
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-欢迎提交 Issue 和 Pull Request 来改进这个项目！
+## 📖 Citation
 
-### 开发指南
-
-1. Fork 本仓库
-2. 创建特性分支 (`git checkout -b feature/AmazingFeature`)
-3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
-4. 推送到分支 (`git push origin feature/AmazingFeature`)
-5. 开启 Pull Request
-
-## 📄 许可证
-
-本项目采用 MIT 许可证 - 详见 [LICENSE](LICENSE) 文件。
-
-## 📖 引用
-
-如果您在研究或项目中使用了 MyAutoGrad，请考虑引用本仓库：
+If you use MyAutoGrad in your research or projects, please consider citing this repository:
 
 ```bibtex
 @software{myautograd,
   title={MyAutoGrad: C++ Automatic Differentiation Framework},
-  author={Your Name},
-  year={2024},
-  url={https://github.com/yourusername/myAutoGrad}
+  author={lifeisphy},
+  year={2025},
+  url={https://github.com/lifeisphy/myAutoGrad}
 }
 ```
 
-## 🙏 致谢
+## 🙏 Acknowledgments
 
-- 感谢所有贡献者的支持
-- 灵感来源于 PyTorch、TensorFlow 等优秀框架
-- 特别感谢开源社区的支持
+- Thanks to all contributors for their support
+- Inspired by excellent frameworks like PyTorch and TensorFlow
+- Special thanks to the open-source community
 
-## 📞 联系方式
+## 📞 Contact
 
-- 📧 Email: [your-email@example.com]
-- 🐛 Issues: [GitHub Issues](https://github.com/yourusername/myAutoGrad/issues)
-- 💬 Discussions: [GitHub Discussions](https://github.com/yourusername/myAutoGrad/discussions)
+- 📧 Email: [lifeisphy@gmail.com]
+- 🐛 Issues: [GitHub Issues](https://github.com/lifeisphy/myAutoGrad/issues)
+- 💬 Discussions: [GitHub Discussions](https://github.com/lifeisphy/myAutoGrad/discussions)
 
 ---
 
-⭐ 如果这个项目对您有帮助，请给我们一个 Star！
+⭐ If this project is helpful to you, please give us a Star!

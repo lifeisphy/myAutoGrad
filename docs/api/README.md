@@ -1,6 +1,6 @@
 # API 参考文档
 
-本文档提供了 MyAutoGrad 框架的详细 API 参考。
+MyAutoGrad 框架的详细 API 参考。
 
 ## 目录
 

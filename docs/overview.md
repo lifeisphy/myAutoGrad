@@ -1,7 +1,5 @@
 # MyAutoGrad - C++ 自动微分框架
 
-## 概述
-
 MyAutoGrad 是一个用 C++ 实现的高性能自动微分框架，支持构建和训练深度神经网络。该框架实现了完整的反向传播算法，支持标量、向量和多维张量的自动微分计算。
 
 ## 主要特性
@@ -45,12 +43,12 @@ MyAutoGrad 是一个用 C++ 实现的高性能自动微分框架，支持构建�
 ├── test/              # 测试和示例
 │   ├── demo.cpp       # 基础演示
 │   ├── test.cpp       # 单元测试
-│   ├── mnist.cpp      # MNIST 手写数字识别
 │   └── ...            # 其他测试文件
-└── docs/              # 文档目录
-    ├── overview.md    # 本文档
-    ├── api/           # API 文档
-    └── examples/      # 示例代码
+├── docs/              # 文档目录
+│   ├── overview.md    # 本文档
+│   ├── api/           # API 文档
+│   ├── examples/      # 示例代码
+│   └── architecture.md # 架构设计
 ```
 
 ## 快速开始
@@ -109,26 +107,3 @@ int main() {
 - [API 参考](api/README.md) - 详细的 API 文档
 - [示例](examples/README.md) - 实际应用示例
 - [架构设计](architecture.md) - 框架内部设计说明
-
-## 更新日志
-
-根据 git 记录，最近的重大更新包括：
-
-- **RNN 网络支持**: 添加了循环神经网络和 LSTM 支持
-- **可视化功能**: 新增计算图可视化功能
-- **Adam 优化器**: 实现了 Adam 优化算法
-- **参数保存/加载**: 支持模型参数的持久化
-- **Python 绑定**: 通过 cppyy 提供 Python 接口
-- **高级张量操作**: 卷积、池化、切片等操作
-
-## 许可证
-
-本项目采用开源许可证，详见 [LICENSE](../LICENSE) 文件。
-
-## 贡献
-
-欢迎提交 Issue 和 Pull Request 来改进这个项目。
-
-## 引用
-
-如果您在研究或项目中使用了 MyAutoGrad，请考虑引用本仓库。

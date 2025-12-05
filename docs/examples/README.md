@@ -1,51 +1,86 @@
 # 示例代码
 
-本文档提供了 MyAutoGrad 框架的实际应用示例，展示了如何使用框架解决各种机器学习问题。
+MyAutoGrad 框架的实际应用示例，展示如何使用框架解决各种机器学习问题。
 
 ## 目录
 
-1. [基础示例](#基础示例)
-2. [神经网络示例](#神经网络示例)
-3. [计算机视觉示例](#计算机视觉示例)
-4. [自然语言处理示例](#自然语言处理示例)
-5. [高级应用示例](#高级应用示例)
+1. [神经网络实验](#神经网络实验)
+2. [高级应用示例](#高级应用示例)
+3. [编译说明](#编译说明)
 
-## 基础示例
+## 神经网络实验
 
-### 线性回归
+### 实验 1: 多层感知机 (MLP)
 
-演示如何使用 MyAutoGrad 实现简单的线性回归模型。
+使用多层感知机进行 MNIST 手写数字识别，展示全连接神经网络的训练和评估。
 
-**代码文件**: [`linear_regression.cpp`](linear_regression.cpp)
+**代码文件**: [`experiment_mlp.cpp`](experiment_mlp.cpp)
 
-**编译运行**:
-```bash
-conda activate gcc-15 && g++ -std=c++23 -I../.. linear_regression.cpp -o linear_regression && ./linear_regression
-```
-
-### 逻辑回归
-
-演示二分类问题的逻辑回归实现。
-
-**代码文件**: [`logistic_regression.cpp`](logistic_regression.cpp)
+**实验特点**:
+- 784-128-10 网络结构
+- ReLU 激活函数
+- Adam 优化器
+- MSE 损失函数
+- 在线学习 (batch size = 1)
 
 **编译运行**:
 ```bash
-conda activate gcc-15 && g++ -std=c++23 -I../.. logistic_regression.cpp -o logistic_regression && ./logistic_regression
+conda activate gcc-15 && g++ -std=c++23 -I../.. experiment_mlp.cpp -o experiment_mlp && ./experiment_mlp
 ```
 
-## 神经网络示例
+**预期结果**:
+- 训练损失: ~0.0338
+- 测试准确率: 100%
+- 训练时间: ~45秒/epoch
 
-### 多层感知机
+### 实验 2: 卷积神经网络 (CNN)
 
-使用多层感知机解决 XOR 问题，展示非线性分类能力。
+使用卷积神经网络进行 MNIST 手写数字识别，展示卷积和池化操作的应用。
 
-**代码文件**: [`multilayer_perceptron.cpp`](multilayer_perceptron.cpp)
+**代码文件**: [`experiment_cnn.cpp`](experiment_cnn.cpp)
+
+**实验特点**:
+- 2个卷积层 (32和48个3×3滤波器)
+- 最大池化层
+- 全连接层 (128个神经元)
+- ReLU 激活函数
+- Adam 优化器
 
 **编译运行**:
 ```bash
-conda activate gcc-15 && g++ -std=c++23 -I../.. multilayer_perceptron.cpp -o multilayer_perceptron && ./multilayer_perceptron
+conda activate gcc-15 && g++ -std=c++23 -I../.. experiment_cnn.cpp -o experiment_cnn && ./experiment_cnn
 ```
+
+**预期结果**:
+- 训练损失: ~0.0833
+- 测试准确率: ~40%
+- 训练时间: ~180秒/epoch
+- 总参数量: 108,570
+
+### 实验 3: 循环神经网络 (RNN)
+
+使用循环神经网络进行正弦函数预测，展示序列建模和时间依赖学习。
+
+**代码文件**: [`experiment_rnn.cpp`](experiment_rnn.cpp)
+
+**实验特点**:
+- 隐藏层大小: 32
+- 输入维度: 10 (前10个值)
+- 序列长度: 20个时间步
+- 目标函数: sin(5x)
+- 单值预测输出
+
+**编译运行**:
+```bash
+conda activate gcc-15 && g++ -std=c++23 -I../.. experiment_rnn.cpp -o experiment_rnn && ./experiment_rnn
+```
+
+**预期结果**:
+- 最终训练损失: ~0.000206
+- 平均预测误差: ~0.0115
+- 成功学习正弦函数模式
+
+## 高级应用示例
 
 ### 使用 Adam 优化器
 
@@ -68,78 +103,6 @@ conda activate gcc-15 && g++ -std=c++23 -I../.. adam_optimizer.cpp -o adam_optim
 ```bash
 conda activate gcc-15 && g++ -std=c++23 -I../.. advanced_features.cpp -o advanced_features && ./advanced_features
 ```
-
-### CNN 网络
-
-演示卷积神经网络的实现，包括卷积层和池化操作。
-
-**代码文件**: [`cnn_network.cpp`](cnn_network.cpp)
-
-**编译运行**:
-```bash
-conda activate gcc-15 && g++ -std=c++23 -I../.. cnn_network.cpp -o cnn_network && ./cnn_network
-```
-
-### 模型训练
-
-演示完整的模型训练流程，包括数据加载、训练循环和评估。
-
-**代码文件**: [`model_training.cpp`](model_training.cpp)
-
-**编译运行**:
-```bash
-conda activate gcc-15 && g++ -std=c++23 -I../.. model_training.cpp -o model_training && ./model_training
-```
-
-## 计算机视觉示例
-
-### 简单的 CNN
-
-演示卷积神经网络的基本操作，包括卷积和池化。
-
-**代码文件**: [`simple_cnn.cpp`](simple_cnn.cpp)
-
-**编译运行**:
-```bash
-conda activate gcc-15 && g++ -std=c++23 -I../.. simple_cnn.cpp -o simple_cnn && ./simple_cnn
-```
-
-### MNIST 数字识别（简化版）
-
-使用神经网络进行手写数字识别的简化示例。
-
-**代码文件**: [`mnist_classification.cpp`](mnist_classification.cpp)
-
-**编译运行**:
-```bash
-conda activate gcc-15 && g++ -std=c++23 -I../.. mnist_classification.cpp -o mnist_classification && ./mnist_classification
-```
-
-## 自然语言处理示例
-
-### 简单的 RNN
-
-演示循环神经网络的基本实现和训练过程。
-
-**代码文件**: [`simple_rnn.cpp`](simple_rnn.cpp)
-
-**编译运行**:
-```bash
-conda activate gcc-15 && g++ -std=c++23 -I../.. simple_rnn.cpp -o simple_rnn && ./simple_rnn
-```
-
-### LSTM 文本生成
-
-使用 LSTM 网络进行简单的字符级文本生成。
-
-**代码文件**: [`lstm_text_generation.cpp`](lstm_text_generation.cpp)
-
-**编译运行**:
-```bash
-conda activate gcc-15 && g++ -std=c++23 -I../.. lstm_text_generation.cpp -o lstm_text_generation && ./lstm_text_generation
-```
-
-## 高级应用示例
 
 ### 计算图可视化
 
@@ -174,6 +137,17 @@ conda activate gcc-15 && g++ -std=c++23 -I../.. model_save_load.cpp -o model_sav
 conda activate gcc-15 && g++ -std=c++23 -I../.. macro_usage.cpp -o macro_usage && ./macro_usage
 ```
 
+### LSTM 文本生成
+
+使用 LSTM 网络进行简单的字符级文本生成。
+
+**代码文件**: [`lstm_text_generation.cpp`](lstm_text_generation.cpp)
+
+**编译运行**:
+```bash
+conda activate gcc-15 && g++ -std=c++23 -I../.. lstm_text_generation.cpp -o lstm_text_generation && ./lstm_text_generation
+```
+
 ## 编译说明
 
 所有示例都可以使用以下通用命令编译：
@@ -188,4 +162,4 @@ conda activate gcc-15 && g++ -std=c++23 -I../.. [filename].cpp -o [output_name] 
 conda activate gcc-15 && make [example_name]
 ```
 
-这些示例涵盖了 MyAutoGrad 框架的各种应用场景，从基础的线性回归到复杂的深度学习模型。通过这些示例，您可以学习如何构建自己的机器学习应用。
+这些示例涵盖了 MyAutoGrad 框架的各种应用场景，从基础的线性回归到复杂的深度学习模型。三个主要实验展示了框架在不同类型神经网络任务中的应用能力。
